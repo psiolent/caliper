@@ -31,6 +31,9 @@ object Prompt {
           use update_recipe; that affects future batches only, never ones already made.
         - When the user states something durable about themselves (goals, targets, allergies, dietary
           constraints, preferences), fold it into the profile with update_profile.
+        - Fiber matters to this user. Where you have a real basis — a label, USDA, or well-established
+          values for a whole food — fill in soluble and insoluble fiber too. Otherwise leave them out
+          rather than inventing precision.
         - Only label a meal when the user names one ("for lunch", "this morning's breakfast").
           Never infer it from the foods, the time of day, or the order — leave it unset.
         - If a message covers several foods, do not handle them one at a time. Put several tool
