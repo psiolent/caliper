@@ -3,9 +3,15 @@ package psiolent.caliper.ui
 import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
 
-/** Whole numbers print whole; everything else gets one decimal. */
-internal fun round(value: Double): String =
-    if (value >= 10 || value == value.toLong().toDouble()) value.toLong().toString() else "%.1f".format(value)
+/**
+ * Whole numbers print whole; anything under ten keeps one decimal. Ten and over are
+ * rounded, not truncated: 41.9 g of fat is 42, not 41.
+ */
+internal fun round(value: Double): String = when {
+    value >= 10 -> Math.round(value).toString()
+    value == value.toLong().toDouble() -> value.toLong().toString()
+    else -> "%.1f".format(value)
+}
 
 /**
  * One nutrient as "value unit name", e.g. "13 g protein" or "380 kcal".

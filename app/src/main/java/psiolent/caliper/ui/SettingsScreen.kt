@@ -8,7 +8,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -49,9 +53,29 @@ fun SettingsScreen(container: AppContainer) {
     var chatModel by rememberSaveable { mutableStateOf(settings.chatModel) }
     var visionModel by rememberSaveable { mutableStateOf(settings.visionModel) }
     var usdaKey by rememberSaveable { mutableStateOf(settings.usdaApiKey) }
-    var models by remember { mutableStateOf<List<ModelInfo>>(emptyList()) }
+    // Null until the list has been fetched, so the sheet can tell "not loaded yet" from
+    // "loaded and empty".
+    var models by remember { mutableStateOf<List<ModelInfo>?>(null) }
+    var modelError by remember { mutableStateOf<String?>(null) }
+    var pickerFor by remember { mutableStateOf<ModelSlot?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
     var revealKeys by rememberSaveable { mutableStateOf(false) }
+
+    fun loadModels() {
+        scope.launch {
+            modelError = null
+            models = null
+            runCatching { OpenRouterClient("").models() }
+                .onSuccess { models = it }
+                .onFailure { modelError = it.message ?: it.javaClass.simpleName }
+        }
+    }
+
+    fun openPicker(slot: ModelSlot) {
+        pickerFor = slot
+        // Only fetch once; reopening the list should be instant.
+        if (models == null && modelError == null) loadModels()
+    }
 
     // The daily goal: which way it moves the day's burn, and by how much.
     var goalDirection by rememberSaveable { mutableIntStateOf(settings.dailyAdjustmentKcal.compareTo(0)) }
@@ -108,6 +132,11 @@ fun SettingsScreen(container: AppContainer) {
             label = { Text("Chat / tool model") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
+            trailingIcon = {
+                IconButton(onClick = { openPicker(ModelSlot.CHAT) }) {
+                    Icon(Icons.Filled.ArrowDropDown, contentDescription = "Choose from the model list")
+                }
+            },
         )
         OutlinedTextField(
             value = visionModel,
@@ -115,6 +144,11 @@ fun SettingsScreen(container: AppContainer) {
             label = { Text("Vision model override (optional)") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
+            trailingIcon = {
+                IconButton(onClick = { openPicker(ModelSlot.VISION) }) {
+                    Icon(Icons.Filled.ArrowDropDown, contentDescription = "Choose from the model list")
+                }
+            },
         )
         OutlinedTextField(
             value = usdaKey,
@@ -155,26 +189,6 @@ fun SettingsScreen(container: AppContainer) {
             )
         }
 
-        Button(onClick = {
-            scope.launch {
-                status = "Loading\u2026"
-                runCatching { OpenRouterClient("").models() }
-                    .onSuccess { models = it; status = "${it.size} models" }
-                    .onFailure { status = "Failed: ${it.message}" }
-            }
-        }) { Text("Load current model list") }
-
-        status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-
-        if (models.isNotEmpty()) {
-            Text("Tap a model to use it", style = MaterialTheme.typography.titleSmall)
-            models.take(80).forEach { model ->
-                TextButton(onClick = { settings.chatModel = model.id; chatModel = model.id }) {
-                    Text(model.id)
-                }
-            }
-        }
-
         Text(
             "Spent on OpenRouter so far: $${"%.4f".format(settings.totalCost)}",
             style = MaterialTheme.typography.bodyMedium,
@@ -188,6 +202,27 @@ fun SettingsScreen(container: AppContainer) {
         Text(
             "Android Auto Backup also copies the database to your Google Drive automatically.",
             style = MaterialTheme.typography.bodySmall,
+        )
+    }
+
+    pickerFor?.let { slot ->
+        ModelPickerSheet(
+            slot = slot,
+            models = models,
+            error = modelError,
+            current = if (slot == ModelSlot.CHAT) chatModel else visionModel,
+            onPick = { id ->
+                if (slot == ModelSlot.CHAT) {
+                    settings.chatModel = id
+                    chatModel = id
+                } else {
+                    settings.visionModel = id
+                    visionModel = id
+                }
+                pickerFor = null
+            },
+            onDismiss = { pickerFor = null },
+            onRetry = { loadModels() },
         )
     }
 }

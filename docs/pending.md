@@ -5,14 +5,7 @@ and ask the user which to take — they sequence this themselves.
 
 Ordered roughly as the user listed them, not by priority.
 
-## 1. Settings: the model list needs containing
-
-"Load current model list" dumps roughly 400 rows into the settings page. It needs its
-own scrollable, searchable view rather than being inlined.
-
-`ui/SettingsScreen.kt`.
-
-## 2. A turn and leaving the screen (tested; one design question left)
+## 1. A turn and leaving the screen (tested; one design question left)
 
 Tested on the phone, so this part is answered:
 
