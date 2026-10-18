@@ -46,18 +46,24 @@ class ToolArgsTest {
 
     @Test
     fun `ingredients read from the documented list shape`() {
-        val parsed = args("""{"ingredients": [{"food_id": "a", "amount": 1, "unit": "cup"}]}""").ingredients()
+        val parsed = args("""{"ingredients": [{"target_id": "a", "amount": 1, "unit": "cup"}]}""").ingredients()
         assertEquals(listOf(Ingredient("a", 1.0, "cup")), parsed)
     }
 
     @Test
+    fun `an ingredient using the old food_id key is rejected, not absorbed`() {
+        // The key was renamed to match log's shape. Accepting both would hide the drift.
+        assertNull(args("""{"ingredients": [{"food_id": "a", "amount": 1, "unit": "cup"}]}""").ingredients())
+    }
+
+    @Test
     fun `a stringified ingredients value is rejected, not dropped`() {
-        assertNull(args("""{"ingredients": "[{\"food_id\": \"a\"}]"}""").ingredients())
+        assertNull(args("""{"ingredients": "[{\"target_id\": \"a\"}]"}""").ingredients())
     }
 
     @Test
     fun `an ingredients row missing its unit is rejected`() {
-        assertNull(args("""{"ingredients": [{"food_id": "a", "amount": 1}]}""").ingredients())
+        assertNull(args("""{"ingredients": [{"target_id": "a", "amount": 1}]}""").ingredients())
     }
 
     @Test(expected = IllegalArgumentException::class)

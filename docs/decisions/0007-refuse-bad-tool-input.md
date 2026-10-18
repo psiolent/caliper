@@ -17,6 +17,12 @@ The same failure showed up once more, quietly: the model passed a *date* as a me
 stamped 00:00. A date is a missing time of day, not a time, so it is now refused like
 anything else that cannot be read.
 
+It shows up most often with a list: `servings` as a stringified map, and later
+`ingredients` as a stringified array — the JSON of a list, sent as text. Both are
+refused, and both errors end "-- not a string", because that is the mistake the model
+keeps making. Refusing costs one round trip and is self-correcting; accepting it would
+quietly save a recipe with no ingredients.
+
 **Consequence.** Retries cost a round trip, but they are self-correcting and visible;
 a silent default costs the same round trip through a failed downstream step, and hides
 the cause. Only complain where the value is actually needed — a redundant `per_100g`

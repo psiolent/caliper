@@ -147,7 +147,9 @@ object ToolSchema {
             "ingredients" to arrayParam(
                 "Ingredient lines.",
                 obj(
-                    "food_id" to stringParam("Id of a saved food."),
+                    // Named as in log(), because the model copies this shape from there.
+                    // Still a food: recipes do not nest.
+                    "target_id" to stringParam("Id of a saved food. An ingredient is always a food, never a recipe."),
                     "amount" to numberParam("Amount of that food."),
                     "unit" to stringParam("Unit, e.g. g, cup, tbsp."),
                 ),
@@ -173,7 +175,7 @@ object ToolSchema {
             "ingredients" to arrayParam(
                 "Replacement ingredient list.",
                 obj(
-                    "food_id" to stringParam("Id of a saved food."),
+                    "target_id" to stringParam("Id of a saved food. An ingredient is always a food, never a recipe."),
                     "amount" to numberParam("Amount of that food."),
                     "unit" to stringParam("Unit."),
                 ),
@@ -280,7 +282,8 @@ class ToolExecutor(
         const val SERVINGS_ERROR =
             "Error: servings must be a list of {\"name\": \"cup\", \"grams\": 80} objects, or a map of name to grams — not a string."
         const val INGREDIENTS_ERROR =
-            "Error: ingredients must be a list of {\"food_id\": \"...\", \"amount\": 1, \"unit\": \"cup\"} objects."
+            "Error: ingredients must be a list of {\"target_id\": \"...\", \"amount\": 1, \"unit\": \"cup\"} " +
+                "objects — not a string."
     }
 
     private fun clock(epochMillis: Long): String =
@@ -670,12 +673,17 @@ internal fun JsonObject.servings(): List<Serving>? = when (val raw = this["servi
     else -> null
 }
 
-/** Null when absent or malformed; callers that allow absence check for the key first. */
+/**
+ * Null when absent or malformed; callers that allow absence check for the key first.
+ *
+ * The tool calls this field `target_id`, matching `log`, but the stored ingredient keeps
+ * `foodId`: that is the persisted shape, and it is genuinely a food.
+ */
 internal fun JsonObject.ingredients(): List<Ingredient>? {
     val rows = this["ingredients"] as? JsonArray ?: return null
     return rows.map { element ->
         val row = element as? JsonObject ?: return null
-        val foodId = row.string("food_id") ?: return null
+        val foodId = row.string("target_id") ?: return null
         val amount = row.number("amount") ?: return null
         val unit = row.string("unit") ?: return null
         Ingredient(foodId, amount, unit)
