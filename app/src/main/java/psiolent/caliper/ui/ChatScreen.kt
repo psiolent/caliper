@@ -100,7 +100,11 @@ fun ChatScreen(container: AppContainer) {
             IconButton(
                 onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
             ) { Text("\uD83D\uDCF7") }
-            IconButton(onClick = { voice.launch(voiceIntent()) }) { Text("\uD83C\uDFA4") }
+            IconButton(
+                onClick = {
+                    if (voiceIntent().resolveActivity(context.packageManager) != null) voice.launch(voiceIntent())
+                },
+            ) { Text("\uD83C\uDFA4") }
             Button(
                 onClick = {
                     viewModel.send(input.trim(), image)
