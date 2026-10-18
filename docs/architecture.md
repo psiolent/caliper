@@ -19,8 +19,8 @@ Central.
 
 ## One turn
 
-1. The user sends text and/or a photo from the Chat screen (voice fills the text
-   field first).
+1. The user sends text and/or a photo from the Chat screen (voice input is the
+   keyboard's own dictation, not ours).
 2. `AgentRunner.send` stores the user message, then assembles a small context: the
    system prompt, a briefing (today, the profile, today's totals, batches on
    hand), the current session's earlier messages, and the new turn.
