@@ -7,6 +7,7 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 import psiolent.caliper.data.Ingredient
 import psiolent.caliper.domain.Serving
+import java.time.Instant
 
 /**
  * These pin the "fail loudly" behaviour: a shape the app cannot read must come back
@@ -57,5 +58,42 @@ class ToolArgsTest {
     @Test
     fun `an ingredients row missing its unit is rejected`() {
         assertNull(args("""{"ingredients": [{"food_id": "a", "amount": 1}]}""").ingredients())
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `a number sent as text is rejected`() {
+        args("""{"amount": "two"}""").number("amount")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `text sent where a number belongs is rejected`() {
+        args("""{"amount": 2}""").string("amount")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `a flag that is not a boolean is rejected rather than read as false`() {
+        args("""{"delete": "yes"}""").boolean("delete")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `an unknown nutrient name is rejected`() {
+        args("""{"estimated": ["protien"]}""").stringSet("estimated")
+    }
+
+    @Test
+    fun `unknown nutrient keys in a panel are reported`() {
+        assertEquals(listOf("protien"), unknownNutrientKeys(args("""{"kcal": 100, "protien": 5}""")))
+    }
+
+    @Test
+    fun `a time in the future is not accepted`() {
+        val now = Instant.parse("2026-10-18T14:55:00Z")
+        assertEquals(true, isFuture(Instant.parse("2026-10-18T16:00:00Z"), now))
+    }
+
+    @Test
+    fun `a time a moment ago is accepted despite clock skew`() {
+        val now = Instant.parse("2026-10-18T14:55:00Z")
+        assertEquals(false, isFuture(Instant.parse("2026-10-18T14:56:00Z"), now))
     }
 }

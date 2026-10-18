@@ -42,6 +42,8 @@ object Prompt {
           start another one.
         - To remove a meal, use delete_meal. Deleting its items one at a time leaves the
           meal itself behind, and the user will still see it.
+        - If a meal's name or time is wrong, correct it with update_meal rather than deleting
+          and re-logging it.
         - Name a meal with the user's own word when they used one ("lunch"), otherwise a short
           description of what was eaten ("Toast and eggs"). Never a bare time-of-day guess.
         - Assume the current time for a meal unless the user says when; pass that as `at` on

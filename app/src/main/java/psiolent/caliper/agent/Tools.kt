@@ -3,6 +3,8 @@ package psiolent.caliper.agent
 import android.util.Log
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -35,7 +37,7 @@ import java.util.UUID
 object ToolSchema {
 
     fun all(): List<JsonObject> = listOf(
-        findFood, recentBatches, getLog, saveFood, startMeal, logIntake, saveRecipe, updateRecipe, makeBatch, reviseEntry, updateProfile, deleteMeal,
+        findFood, recentBatches, getLog, saveFood, startMeal, logIntake, saveRecipe, updateRecipe, makeBatch, reviseEntry, updateProfile, updateMeal, deleteMeal,
     )
 
     private val nutrientKeys = Nutrient.entries.joinToString(", ") { it.name.lowercase() }
@@ -98,6 +100,18 @@ object ToolSchema {
             "at" to stringParam("When the meal happened, if the user said. A time like 07:00 means today."),
         ),
         required = listOf("label"),
+    )
+
+    private val updateMeal = function(
+        name = "update_meal",
+        description = "Change an existing meal's name or when it happened — for example when the " +
+            "user says the time was wrong. Supply only what changes.",
+        properties = obj(
+            "meal_id" to stringParam("The meal to change."),
+            "label" to stringParam("New name."),
+            "at" to stringParam("New time, if the original was wrong."),
+        ),
+        required = listOf("meal_id"),
     )
 
     private val deleteMeal = function(
@@ -265,8 +279,8 @@ class ToolExecutor(
     private companion object {
         const val TAG = "Caliper"
         val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-        const val WHEN_ERROR =
-            "Error: 'at' could not be read as a time. Use a local date-time like 2026-10-18T07:00, or a time like 07:00."
+        const val WHEN_MESSAGE =
+            "'at' could not be read as a time. Use a local date-time like 2026-10-18T07:00, or a time like 07:00."
         const val SERVINGS_ERROR =
             "Error: servings must be a list of {\"name\": \"cup\", \"grams\": 80} objects, or a map of name to grams — not a string."
         const val INGREDIENTS_ERROR =
@@ -285,6 +299,7 @@ class ToolExecutor(
             "get_log" -> getLog(args)
             "save_food" -> saveFood(args)
             "start_meal" -> startMeal(args)
+            "update_meal" -> updateMeal(args)
             "delete_meal" -> deleteMeal(args)
             "log" -> logIntake(args)
             "save_recipe" -> saveRecipe(args)
@@ -368,7 +383,9 @@ class ToolExecutor(
             createdAt = existing?.createdAt ?: Instant.now().toEpochMilli(),
         )
         repo.saveFood(food)
-        return "Saved food id=${food.id} name=\"${food.name}\" source=${food.source.name.lowercase()}."
+        val ignored = unknownNutrientKeys(per100g ?: JsonObject(emptyMap()))
+        val note = if (ignored.isEmpty()) "" else " (ignored unrecognised keys: ${ignored.joinToString(", ")})"
+        return "Saved food id=${food.id} name=\"${food.name}\" source=${food.source.name.lowercase()}.$note"
     }
 
     private suspend fun logIntake(args: JsonObject): String {
@@ -377,7 +394,7 @@ class ToolExecutor(
         val targetId = args.string("target_id") ?: return "Error: target_id is required"
         val amount = args.number("amount") ?: return "Error: amount is required"
         val unit = args.string("unit") ?: return "Error: unit is required"
-        val at = args.string("at")?.let { parseWhen(it) ?: return WHEN_ERROR }
+        val at = whenArg(args.string("at"))
 
         val entry = when {
             repo.food(targetId) != null -> repo.logFood(targetId, amount, unit, mealId, at)
@@ -391,7 +408,7 @@ class ToolExecutor(
     private suspend fun startMeal(args: JsonObject): String {
         val label = args.string("label")?.trim()?.takeIf { it.isNotEmpty() }
             ?: return "Error: label is required — the user's own word, or a short description of what was eaten."
-        val at = args.string("at")?.let { parseWhen(it) ?: return WHEN_ERROR } ?: Instant.now()
+        val at = whenArg(args.string("at")) ?: Instant.now()
         val meal = repo.openMeal(label, at)
         return "Started meal id=${meal.id} name=\"${meal.label}\". Log its items with this meal_id."
     }
@@ -421,7 +438,7 @@ class ToolExecutor(
 
     private suspend fun makeBatch(args: JsonObject): String {
         val recipeId = args.string("recipe_id") ?: return "Error: recipe_id is required"
-        val at = args.string("at")?.let { parseWhen(it) ?: return WHEN_ERROR } ?: Instant.now()
+        val at = whenArg(args.string("at")) ?: Instant.now()
         val batch = repo.makeBatch(recipeId, args.string("name"), at)
         return "Made batch id=${batch.id} name=\"${batch.name}\" total=${batch.totalGrams.toInt()} g."
     }
@@ -433,7 +450,7 @@ class ToolExecutor(
             return "Deleted entry $id."
         }
         val existing = repo.entry(id) ?: return "Error: no entry with id $id"
-        val at = args.string("at")?.let { parseWhen(it) ?: return WHEN_ERROR }
+        val at = whenArg(args.string("at"))
         repo.reviseEntry(
             id = id,
             amount = args.number("amount") ?: existing.amount,
@@ -441,6 +458,12 @@ class ToolExecutor(
             at = at,
         )
         return "Revised entry $id."
+    }
+
+    private suspend fun updateMeal(args: JsonObject): String {
+        val mealId = args.string("meal_id") ?: return "Error: meal_id is required"
+        val meal = repo.updateMeal(mealId, args.string("label"), whenArg(args.string("at")))
+        return "Meal is now \"${meal.label}\" at ${clock(meal.at)}."
     }
 
     private suspend fun deleteMeal(args: JsonObject): String {
@@ -458,16 +481,13 @@ class ToolExecutor(
 
     // --- parsing helpers ---------------------------------------------------
 
-    private fun args(raw: String): JsonObject =
-        if (raw.isBlank()) JsonObject(emptyMap()) else json.parseToJsonElement(raw) as? JsonObject ?: JsonObject(emptyMap())
-
-    private fun JsonObject.boolean(key: String): Boolean? = (this[key] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
-
-    private fun JsonObject.stringSet(key: String): Set<Nutrient> =
-        (this[key] as? JsonArray)
-            ?.mapNotNull { (it as? JsonPrimitive)?.content?.let(::nutrientByKey) }
-            ?.toSet()
-            ?: emptySet()
+    private fun args(raw: String): JsonObject {
+        if (raw.isBlank()) return JsonObject(emptyMap())
+        val parsed = runCatching { json.parseToJsonElement(raw) }.getOrNull()
+            ?: throw IllegalArgumentException("tool arguments were not valid JSON: ${raw.take(120)}")
+        return parsed as? JsonObject
+            ?: throw IllegalArgumentException("tool arguments must be a JSON object, but were ${parsed.typeName()}")
+    }
 
     /**
      * Accept the shapes a model actually produces for a time: a full instant, a
@@ -475,6 +495,22 @@ class ToolExecutor(
      * quietly substituting "now", so a bad time is surfaced instead of hidden.
      */
     private fun parseWhen(raw: String): Instant? = parseWhen(raw, ZoneId.systemDefault())
+
+    /**
+     * A time the user gave. A future one is a mistake — nobody has eaten yet — so it
+     * comes back as an error rather than being stored as if it were real.
+     */
+    private fun whenArg(raw: String?): Instant? {
+        if (raw == null) return null
+        val at = parseWhen(raw) ?: throw IllegalArgumentException(WHEN_MESSAGE)
+        if (isFuture(at, Instant.now())) {
+            throw IllegalArgumentException(
+                "\"$raw\" is in the future, so it cannot be when something was eaten. " +
+                    "Omit `at` to use the current time.",
+            )
+        }
+        return at
+    }
 
     private fun buildNutrients(panel: JsonObject): Nutrients = Nutrients(
         panel.entries.mapNotNull { (key, value) ->
@@ -543,11 +579,51 @@ internal fun parseWhen(raw: String, zone: ZoneId, today: LocalDate = LocalDate.n
 
 private val NUMBER = Regex("""-?\d+(\.\d+)?""")
 
-internal fun JsonObject.string(key: String): String? =
-    (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+/** A little slack, so clock skew does not reject something logged a moment ago. */
+internal fun isFuture(at: Instant, now: Instant, toleranceSeconds: Long = 300): Boolean =
+    at.isAfter(now.plusSeconds(toleranceSeconds))
 
-internal fun JsonObject.number(key: String): Double? =
-    (this[key] as? JsonPrimitive)?.content?.toDoubleOrNull()
+internal fun JsonObject.string(key: String): String? {
+    val raw = this[key] ?: return null
+    return (raw as? JsonPrimitive)?.takeIf { it.isString }?.content
+        ?: throw IllegalArgumentException("\"$key\" must be text, but was ${raw.typeName()}")
+}
+
+internal fun JsonObject.number(key: String): Double? {
+    val raw = this[key] ?: return null
+    return (raw as? JsonPrimitive)?.content?.toDoubleOrNull()
+        ?: throw IllegalArgumentException("\"$key\" must be a number, but was ${raw.typeName()}")
+}
+
+internal fun JsonObject.boolean(key: String): Boolean? {
+    val raw = this[key] ?: return null
+    return (raw as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
+        ?: throw IllegalArgumentException("\"$key\" must be true or false, but was ${raw.typeName()}")
+}
+
+/** Unknown nutrient names are reported rather than dropped; they are usually a typo. */
+internal fun JsonObject.stringSet(key: String): Set<Nutrient> {
+    val raw = this[key] ?: return emptySet()
+    val rows = raw as? JsonArray
+        ?: throw IllegalArgumentException("\"$key\" must be a list of nutrient names, but was ${raw.typeName()}")
+    return rows.map { element ->
+        val text = (element as? JsonPrimitive)?.takeIf { it.isString }?.content
+            ?: throw IllegalArgumentException("\"$key\" must be a list of nutrient names")
+        nutrientByKey(text)
+            ?: throw IllegalArgumentException("\"$key\" names a nutrient Caliper does not track: \"$text\"")
+    }.toSet()
+}
+
+/** Nutrient keys in a panel the app does not recognise. */
+internal fun unknownNutrientKeys(panel: JsonObject): List<String> =
+    panel.keys.filter { nutrientByKey(it) == null }
+
+private fun JsonElement.typeName(): String = when (this) {
+    is JsonObject -> "an object"
+    is JsonArray -> "a list"
+    is JsonNull -> "null"
+    else -> if ((this as JsonPrimitive).isString) "text" else "a number or boolean"
+}
 
 /** Accept a plain number, or a string like "144 kcal" or "15 g". */
 internal fun JsonPrimitive.amountOrNull(): Double? {

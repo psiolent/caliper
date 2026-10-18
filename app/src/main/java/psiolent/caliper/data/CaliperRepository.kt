@@ -128,6 +128,17 @@ class CaliperRepository(private val db: CaliperDatabase) {
 
     suspend fun meal(id: String): MealEntity? = meals.byId(id)
 
+    /** Rename a meal, move it in time, or both. */
+    suspend fun updateMeal(id: String, label: String?, at: Instant?): MealEntity {
+        val existing = meals.byId(id) ?: throw IllegalArgumentException("No meal with id $id")
+        val updated = existing.copy(
+            label = label?.trim()?.takeIf { it.isNotEmpty() } ?: existing.label,
+            at = at?.toEpochMilli() ?: existing.at,
+        )
+        meals.upsert(updated)
+        return updated
+    }
+
     /** Remove a meal and everything logged for it. */
     suspend fun deleteMeal(id: String) {
         logs.deleteForMeal(id)
