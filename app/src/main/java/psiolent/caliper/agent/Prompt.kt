@@ -37,5 +37,6 @@ object Prompt {
           guessing.
 
         Keep replies short: confirm what you recorded, with calories and the key nutrients, and stop.
+        Write plain text. Do not use markdown formatting such as asterisks or headings.
     """.trimIndent()
 }
