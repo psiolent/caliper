@@ -93,11 +93,12 @@ fun DayScreen(container: AppContainer) {
                     )
                 }
             } else {
-                meals.forEach { group ->
+                meals.forEachIndexed { index, group ->
                     item(key = "meal:${group.meal.id}") {
                         MealHeader(
                             meal = group.meal,
                             kcal = group.entries.sumOf { it.nutrients[Nutrient.KCAL] ?: 0.0 },
+                            first = index == 0,
                         )
                     }
                     items(group.entries, key = { it.id }) { entry -> ItemRow(entry) }
@@ -108,17 +109,30 @@ fun DayScreen(container: AppContainer) {
 }
 
 @Composable
-private fun MealHeader(meal: MealEntity, kcal: Double) {
-    Column(Modifier.fillMaxWidth().padding(top = 22.dp)) {
+private fun MealHeader(meal: MealEntity, kcal: Double, first: Boolean) {
+    Column(Modifier.fillMaxWidth().padding(top = if (first) 24.dp else 8.dp)) {
+        // The rule goes *above* the meal, separating it from the one before. It used to
+        // sit under the name, which cut the meal off from its own items and left the
+        // meals running together.
+        if (!first) {
+            HorizontalDivider(
+                modifier = Modifier.padding(bottom = 18.dp),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Bottom,
         ) {
-            Text(meal.label, style = MaterialTheme.typography.titleSmall)
+            Text(
+                meal.label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
             Text(
                 "${round(kcal)} kcal",
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -126,10 +140,6 @@ private fun MealHeader(meal: MealEntity, kcal: Double) {
             timeFormat.format(Instant.ofEpochMilli(meal.at).atZone(ZoneId.systemDefault())),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        HorizontalDivider(
-            modifier = Modifier.padding(top = 6.dp),
-            color = MaterialTheme.colorScheme.outlineVariant,
         )
     }
 }
