@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pre-Android 12 backup rules: keep the API keys out of the cloud backup. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="caliper.settings.xml" />
+</full-backup-content>

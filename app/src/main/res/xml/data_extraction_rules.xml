@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The settings file holds the OpenRouter and USDA API keys. It is excluded from
+  both cloud backup and device-to-device transfer so the keys never leave the
+  device, even inside a Google Drive backup.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="caliper.settings.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="caliper.settings.xml" />
+    </device-transfer>
+</data-extraction-rules>

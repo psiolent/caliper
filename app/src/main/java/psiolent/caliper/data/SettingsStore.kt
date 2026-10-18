@@ -9,12 +9,14 @@ class SettingsStore(context: Context) {
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences("caliper.settings", Context.MODE_PRIVATE)
 
+    // Keys are read with all whitespace stripped: a value pasted with a stray
+    // newline is a valid key, and whitespace in an HTTP header throws.
     var openRouterApiKey: String
-        get() = prefs.getString(KEY_OPENROUTER, "").orEmpty()
+        get() = prefs.getString(KEY_OPENROUTER, "").orEmpty().filterNot { it.isWhitespace() }
         set(value) = prefs.edit().putString(KEY_OPENROUTER, value).apply()
 
     var usdaApiKey: String
-        get() = prefs.getString(KEY_USDA, "").orEmpty()
+        get() = prefs.getString(KEY_USDA, "").orEmpty().filterNot { it.isWhitespace() }
         set(value) = prefs.edit().putString(KEY_USDA, value).apply()
 
     var chatModel: String

@@ -21,7 +21,6 @@ class AgentRunner(
     private val repo: CaliperRepository,
     private val settings: SettingsStore,
 ) {
-    private val executor get() = ToolExecutor(repo, UsdaClient(settings.usdaApiKey))
     private val tools = ToolSchema.all()
 
     suspend fun newSession(): String {
@@ -31,44 +30,66 @@ class AgentRunner(
     }
 
     suspend fun send(sessionId: String, userText: String, imageDataUrl: String? = null): String {
-        val apiKey = settings.openRouterApiKey.trim()
-        if (apiKey.isBlank()) return "Add your OpenRouter API key in Settings, then try again."
+        val apiKey = settings.openRouterApiKey
+        if (apiKey.isBlank()) {
+            return reply(sessionId, "Add your OpenRouter API key in Settings, then try again.", 0.0)
+        }
 
         repo.addMessage(
             MessageEntity(sessionId = sessionId, role = MessageRole.USER, content = userText, at = Instant.now().toEpochMilli()),
         )
 
-        val model = settings.modelFor(imageDataUrl != null)
-        val client = OpenRouterClient(apiKey)
-        val messages = mutableListOf<JsonObject>()
-        messages += textMessage("system", Prompt.SYSTEM)
-        messages += textMessage("system", context())
-        repo.messages(sessionId).dropLast(1).forEach { previous ->
-            messages += textMessage(previous.role.name.lowercase(), previous.content)
-        }
-        messages += if (imageDataUrl != null) {
-            userMessageWithImage(userText, imageDataUrl)
-        } else {
-            textMessage("user", userText)
-        }
-
+        val executor = ToolExecutor(repo, UsdaClient(settings.usdaApiKey))
         var cost = 0.0
-        repeat(MAX_STEPS) {
-            val response = client.chat(model, messages, tools, webSearch = true)
-            cost += response.usage?.cost ?: 0.0
-            val message = response.choices.firstOrNull()?.message
-                ?: return reply(sessionId, "The model returned no reply.", cost)
-            val calls = message.toolCalls.orEmpty()
-            if (calls.isEmpty()) {
-                val text = message.content?.takeIf { it.isNotBlank() } ?: "(no reply)"
-                return reply(sessionId, text, cost)
+        return try {
+            val model = settings.modelFor(imageDataUrl != null)
+            val client = OpenRouterClient(apiKey)
+            val messages = mutableListOf<JsonObject>()
+            messages += textMessage("system", Prompt.SYSTEM)
+            messages += textMessage("system", context())
+            repo.messages(sessionId).dropLast(1).forEach { previous ->
+                messages += textMessage(previous.role.name.lowercase(), previous.content)
             }
-            messages += assistantToolCallMessage(message)
-            calls.forEach { call ->
-                messages += toolResultMessage(call.id, executor.execute(call.function.name, call.function.arguments))
+            messages += if (imageDataUrl != null) {
+                userMessageWithImage(userText, imageDataUrl)
+            } else {
+                textMessage("user", userText)
             }
+
+            var replyText: String? = null
+            var steps = 0
+            while (replyText == null && steps < MAX_STEPS) {
+                steps++
+                val response = client.chat(model, messages, tools, webSearch = true)
+                cost += response.usage?.cost ?: 0.0
+
+                val message = response.choices.firstOrNull()?.message
+                if (message == null) {
+                    replyText = "The model returned no reply."
+                    break
+                }
+                val calls = message.toolCalls.orEmpty()
+                if (calls.isEmpty()) {
+                    replyText = message.content?.takeIf { it.isNotBlank() } ?: "(no reply)"
+                    break
+                }
+                messages += assistantToolCallMessage(message)
+                calls.forEach { call ->
+                    messages += toolResultMessage(call.id, executor.execute(call.function.name, call.function.arguments))
+                }
+            }
+
+            reply(
+                sessionId,
+                replyText ?: "I stopped after $MAX_STEPS steps without finishing. Try rephrasing.",
+                cost,
+            )
+        } catch (e: Exception) {
+            // A model or network failure must never take the app down, and the key
+            // must never end up in an error string.
+            val detail = (e.message ?: e.javaClass.simpleName).replace(apiKey, "\u2039key\u203a")
+            reply(sessionId, "I couldn't reach the model: $detail", cost)
         }
-        return reply(sessionId, "I stopped after $MAX_STEPS steps without finishing. Try rephrasing.", cost)
     }
 
     private suspend fun reply(sessionId: String, text: String, cost: Double): String {

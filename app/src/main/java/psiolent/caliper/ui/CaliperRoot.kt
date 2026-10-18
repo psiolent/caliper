@@ -1,8 +1,10 @@
 package psiolent.caliper.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -29,6 +31,7 @@ private val tabs = listOf(
 fun CaliperRoot(container: AppContainer) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
     Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
             NavigationBar {
                 tabs.forEachIndexed { index, tab ->

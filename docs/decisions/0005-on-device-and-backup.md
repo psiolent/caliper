@@ -11,3 +11,8 @@ safety net the user controls.
 **Consequence.** Keep the database small. Meal photos are never persisted — they
 exist only for the turn that reads them — so the 25 MB Auto Backup cap is never
 approached. The manual export serializes every entity as JSON.
+
+The settings file (holding the OpenRouter and USDA keys) is excluded from cloud
+backup and device transfer via `data_extraction_rules.xml` and `backup_rules.xml`,
+so keys never ride along in a Google Drive backup. Keys are also read back with
+all whitespace stripped, because a pasted newline in an HTTP header throws.
