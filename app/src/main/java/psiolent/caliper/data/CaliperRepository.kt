@@ -58,6 +58,14 @@ class CaliperRepository(private val db: CaliperDatabase) {
     /** Recipes by name, for finding one to log against or to change. */
     suspend fun allRecipes(): List<RecipeEntity> = recipes.all()
 
+    /**
+     * A recipe's panel per 100 g, or null when it cannot be worked out — which happens
+     * if a food it uses has since been deleted. The Library shows the ingredients either
+     * way rather than failing to open.
+     */
+    suspend fun recipePanel(recipe: RecipeEntity): Nutrients? =
+        runCatching { computePanel(recipe.ingredients, recipe.yieldGrams).first }.getOrNull()
+
     suspend fun profileText(): String = profile.get()?.text.orEmpty()
     suspend fun saveProfile(text: String) = profile.upsert(ProfileEntity(text = text))
 

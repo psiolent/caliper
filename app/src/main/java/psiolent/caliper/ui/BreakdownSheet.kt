@@ -13,6 +13,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -28,7 +29,12 @@ internal data class BreakdownRequest(
     val panel: Nutrients,
     /** A line under the title: what the panel is of, when that is not the title. */
     val subtitle: String? = null,
+    /** Further named lists under the nutrition: a recipe's portions and ingredients. */
+    val sections: List<BreakdownSection> = emptyList(),
 )
+
+/** A named list under the breakdown, each line already written out. */
+internal data class BreakdownSection(val title: String, val lines: List<String>)
 
 private val FAT_PARTS = listOf(
     Nutrient.SATURATED_FAT,
@@ -54,7 +60,12 @@ private data class BreakdownLine(val name: String, val value: String, val emphas
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun BreakdownSheet(request: BreakdownRequest, onDismiss: () -> Unit) {
+internal fun BreakdownSheet(
+    request: BreakdownRequest,
+    onDismiss: () -> Unit,
+    /** Where the thing can be removed. Absent for panels that are not a row in a list. */
+    onDelete: (() -> Unit)? = null,
+) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         // A breakdown does not fit half a screen, and opening already expanded beats
@@ -82,6 +93,38 @@ internal fun BreakdownSheet(request: BreakdownRequest, onDismiss: () -> Unit) {
                 )
             }
             Column(Modifier.padding(top = 14.dp)) { Breakdown(request.panel) }
+
+            request.sections.forEach { section ->
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+                Text(
+                    section.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                section.lines.forEach { line ->
+                    Text(
+                        line,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 3.dp),
+                    )
+                }
+            }
+
+            onDelete?.let { delete ->
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+                // Removing something is destructive and irreversible, so it lives here,
+                // behind a deliberate tap on the thing itself, rather than on every row.
+                TextButton(onClick = delete) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            }
         }
     }
 }

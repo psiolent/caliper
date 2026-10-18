@@ -5,22 +5,7 @@ and ask the user which to take — they sequence this themselves.
 
 Ordered roughly as the user listed them, not by priority.
 
-## 1. Library: no visual distinction and no search
-
-Rows are undifferentiated and the list will grow without bound. Wants search, and
-probably tabs. It holds Recipes and Foods; batches are gone (`docs/decisions/0010`).
-
-The recipe path has since been exercised on the device — saving one, logging a portion
-in grams, half a recipe, and a cup of it, and a refusal for a unit the dish does not
-define. So the untested-path half of this item is done, and what is left is the screen.
-
-One gap worth closing with it: a recipe row shows no nutrition, because a recipe has no
-stored panel. It could compute and show one, and open the breakdown sheet the way a food
-row does.
-
-`ui/LibraryScreen.kt`.
-
-## 2. History: group by day, and summarise each session
+## 1. History: group by day, and summarise each session
 
 Group sessions under "Today", "Yesterday", "Saturday", "Last week". Each entry should
 carry a short summary of what the session contained.
@@ -32,14 +17,14 @@ before building.
 
 `ui/HistoryScreen.kt`, `data` (sessions and messages).
 
-## 3. Settings: the model list needs containing
+## 2. Settings: the model list needs containing
 
 "Load current model list" dumps roughly 400 rows into the settings page. It needs its
 own scrollable, searchable view rather than being inlined.
 
 `ui/SettingsScreen.kt`.
 
-## 4. A turn and leaving the screen (tested; one design question left)
+## 3. A turn and leaving the screen (tested; one design question left)
 
 Tested on the phone, so this part is answered:
 
@@ -62,6 +47,28 @@ session you are no longer looking at. Worth deciding as one question, not two.
 Related: a turn that ran while the screen was off failed once with "Unable to resolve
 host openrouter.ai" — the phone suspends the network in low-power states. Another
 argument for a foreground service if long turns matter.
+
+## 4. A turn can repeat one failing call until it runs out of steps
+
+Seen while seeding test data: the model sent `servings` as a stringified map on
+`save_food`, was refused, and sent the same malformed call again — 38 times, until the
+turn gave up. Every call was correctly refused; the app simply executed the same failure
+as often as the model offered it.
+
+Now that `MAX_STEPS` is 100, that costs about five times what it did at 20. A turn
+should notice the same tool failing with the same error a few times and stop with
+something the user can act on, rather than spending the budget.
+
+`agent/AgentRunner.kt`.
+
+## 5. Deleting a food that a recipe uses leaves the recipe uncomputable
+
+`deleteFood` removes the row. A recipe naming it then cannot be logged — `logRecipe`
+fails with "No food with id" — and the Library shows it as "nutrition unavailable"
+rather than explaining why. The agent gets a loud error, so nothing is wrong silently,
+but the user has no way out except deleting the recipe.
+
+Either refuse to delete a food a recipe uses, or make the message name the recipe.
 
 ## Known friction, deliberately left alone
 

@@ -149,7 +149,7 @@ fun DayScreen(container: AppContainer) {
         }
     }
 
-    breakdown?.let { request -> BreakdownSheet(request) { breakdown = null } }
+    breakdown?.let { request -> BreakdownSheet(request, onDismiss = { breakdown = null }) }
 }
 
 @Composable
