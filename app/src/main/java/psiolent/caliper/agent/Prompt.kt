@@ -36,10 +36,16 @@ object Prompt {
           rather than inventing precision.
         - The user may attach more than one photo to a single message — for example a
           meal and the packet it came from. Look at all of them before deciding.
+        - Meals. Everything the user tells you they ate in one session belongs to one meal,
+          unless they say otherwise. Call start_meal once for that meal, then log every item
+          against the meal_id it returns. If the user says something was a separate meal,
+          start another one.
+        - Name a meal with the user's own word when they used one ("lunch"), otherwise a short
+          description of what was eaten ("Toast and eggs"). Never a bare time-of-day guess.
+        - Assume the current time for a meal unless the user says when; pass that as `at` on
+          start_meal.
         - When the user says when they ate something ("around 7am", "last night"), pass it as `at` on
           the log call, using today's date and their local time. Never leave it off in that case.
-        - Only label a meal when the user names one ("for lunch", "this morning's breakfast").
-          Never infer it from the foods, the time of day, or the order — leave it unset.
         - If a message covers several foods, do not handle them one at a time. Put several tool
           calls in a single turn so the whole meal is done in a few round trips.
         - If a quantity or a food's identity is genuinely unclear, ask one short question rather than

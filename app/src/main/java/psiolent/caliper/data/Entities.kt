@@ -1,9 +1,10 @@
 package psiolent.caliper.data
 
+import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import androidx.room.Relation
 import kotlinx.serialization.Serializable
-import psiolent.caliper.domain.Meal
 import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
 import psiolent.caliper.domain.Serving
@@ -72,6 +73,26 @@ data class BatchEntity(
 @Serializable
 enum class TargetType { FOOD, BATCH }
 
+@Serializable
+@Entity(tableName = "meals")
+data class MealEntity(
+    @PrimaryKey val id: String,
+    /**
+     * The user's own word when they gave one ("lunch"), otherwise a short
+     * description of what was eaten ("Toast and eggs"). Never a time-of-day guess.
+     */
+    val label: String,
+    /** When the meal happened; shown once for the whole meal. */
+    val at: Long,
+)
+
+/** A meal with the items eaten for it. */
+data class MealWithEntries(
+    @Embedded val meal: MealEntity,
+    @Relation(parentColumn = "id", entityColumn = "mealId")
+    val entries: List<LogEntryEntity>,
+)
+
 /**
  * Something eaten. The nutrient panel is snapshotted at log time so history is
  * stable even if the underlying food or batch is later corrected.
@@ -80,6 +101,8 @@ enum class TargetType { FOOD, BATCH }
 @Entity(tableName = "log_entries")
 data class LogEntryEntity(
     @PrimaryKey val id: String,
+    /** The meal this item belongs to. */
+    val mealId: String,
     val targetType: TargetType,
     val targetId: String,
     /** The food or batch name at log time, for rendering without a join. */
@@ -88,7 +111,6 @@ data class LogEntryEntity(
     val unit: String,
     val grams: Double,
     val nutrients: Nutrients,
-    val meal: Meal? = null,
     val at: Long,
 )
 

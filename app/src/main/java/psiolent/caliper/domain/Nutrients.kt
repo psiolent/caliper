@@ -102,11 +102,4 @@ private val NUTRIENT_ALIASES: Map<String, Nutrient> = buildMap {
 /** Resolve a nutrient from a model-supplied key: an enum name, or a common label variant. */
 fun nutrientByKey(key: String): Nutrient? = NUTRIENT_ALIASES[nutrientKeyForm(key)]
 
-/** Optional label for a log entry. Absent means "unlabelled", which is normal. */
-@Serializable
-enum class Meal(val displayName: String) {
-    BREAKFAST("Breakfast"),
-    LUNCH("Lunch"),
-    DINNER("Dinner"),
-    SNACK("Snack"),
-}
+/** A panel of nutrients, plus the amounts a recipe or batch is computed from. */

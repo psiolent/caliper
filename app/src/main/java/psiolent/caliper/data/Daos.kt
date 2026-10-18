@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
@@ -68,6 +69,27 @@ interface BatchDao {
 
     @Delete
     suspend fun delete(batch: BatchEntity)
+}
+
+@Dao
+interface MealDao {
+    /** Meals in a time window, each with its items. */
+    @Transaction
+    @Query("SELECT * FROM meals WHERE at >= :from AND at < :to ORDER BY at")
+    fun observeBetween(from: Long, to: Long): Flow<List<MealWithEntries>>
+
+    @Transaction
+    @Query("SELECT * FROM meals WHERE at >= :from AND at < :to ORDER BY at")
+    suspend fun between(from: Long, to: Long): List<MealWithEntries>
+
+    @Query("SELECT * FROM meals WHERE id = :id")
+    suspend fun byId(id: String): MealEntity?
+
+    @Query("SELECT * FROM meals")
+    suspend fun all(): List<MealEntity>
+
+    @Upsert
+    suspend fun upsert(meal: MealEntity)
 }
 
 @Dao

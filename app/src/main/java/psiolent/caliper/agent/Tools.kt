@@ -14,7 +14,6 @@ import psiolent.caliper.data.FoodEntity
 import psiolent.caliper.data.FoodSource
 import psiolent.caliper.data.Ingredient
 import psiolent.caliper.data.LogEntryEntity
-import psiolent.caliper.domain.Meal
 import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
 import psiolent.caliper.domain.Serving
@@ -26,6 +25,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 /**
@@ -35,7 +35,7 @@ import java.util.UUID
 object ToolSchema {
 
     fun all(): List<JsonObject> = listOf(
-        findFood, recentBatches, getLog, saveFood, logIntake, saveRecipe, updateRecipe, makeBatch, reviseEntry, updateProfile,
+        findFood, recentBatches, getLog, saveFood, startMeal, logIntake, saveRecipe, updateRecipe, makeBatch, reviseEntry, updateProfile,
     )
 
     private val nutrientKeys = Nutrient.entries.joinToString(", ") { it.name.lowercase() }
@@ -83,18 +83,32 @@ object ToolSchema {
         required = listOf("name"),
     )
 
+    private val startMeal = function(
+        name = "start_meal",
+        description = "Begin a meal before logging what was eaten for it. Everything the user tells you " +
+            "they ate in one session belongs to one meal unless they say otherwise, so start one meal " +
+            "and log its items against that id. Name it with the user's own word if they used one " +
+            "(\"lunch\"), otherwise a short description of what was eaten (\"Toast and eggs\"). Use the " +
+            "current time unless the user says when.",
+        properties = obj(
+            "label" to stringParam("Short name for the meal."),
+            "at" to stringParam("When the meal happened, if the user said. A time like 07:00 means today."),
+        ),
+        required = listOf("label"),
+    )
+
     private val logIntake = function(
         name = "log",
         description = "Record something eaten, against a saved food or batch id. Give an amount and a unit: " +
             "a mass unit (g, oz, lb), or a serving the food defines (cup, slice, tbsp).",
         properties = obj(
+            "meal_id" to stringParam("The meal to add this item to, from start_meal."),
             "target_id" to stringParam("Id of the food or batch."),
             "amount" to numberParam("How much was eaten."),
             "unit" to stringParam("Unit, e.g. g, oz, cup, slice."),
-            "meal" to enumParam("Only if the user named a meal. Omit otherwise.", "BREAKFAST", "LUNCH", "DINNER", "SNACK"),
-            "at" to stringParam("When it was eaten, if the user said. A local date-time like 2026-10-18T07:00 or a time like 07:00 means today."),
+            "at" to stringParam("Only if this item's own time differs from the meal's."),
         ),
-        required = listOf("target_id", "amount", "unit"),
+        required = listOf("meal_id", "target_id", "amount", "unit"),
     )
 
     private val saveRecipe = function(
@@ -162,7 +176,6 @@ object ToolSchema {
             "entry_id" to stringParam("Id of the log entry."),
             "amount" to numberParam("New amount."),
             "unit" to stringParam("New unit."),
-            "meal" to enumParam("New meal label.", "BREAKFAST", "LUNCH", "DINNER", "SNACK"),
             "at" to stringParam("New time, if the original was wrong."),
             "delete" to boolParam("Set true to remove the entry."),
         ),
@@ -241,9 +254,13 @@ class ToolExecutor(
     private companion object {
         const val TAG = "Caliper"
         val NUMBER = Regex("""-?\d+(\.\d+)?""")
+        val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
         const val WHEN_ERROR =
             "Error: 'at' could not be read as a time. Use a local date-time like 2026-10-18T07:00, or a time like 07:00."
     }
+
+    private fun clock(epochMillis: Long): String =
+        TIME.format(Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()))
 
     suspend fun execute(name: String, arguments: String): String = try {
         val args = args(arguments)
@@ -253,6 +270,7 @@ class ToolExecutor(
             "recent_batches" -> recentBatches()
             "get_log" -> getLog(args)
             "save_food" -> saveFood(args)
+            "start_meal" -> startMeal(args)
             "log" -> logIntake(args)
             "save_recipe" -> saveRecipe(args)
             "update_recipe" -> updateRecipe(args)
@@ -290,9 +308,12 @@ class ToolExecutor(
         val date = args.string("date")?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             ?: return "Error: date must be YYYY-MM-DD"
         val day = repo.day(date)
-        if (day.entries.isEmpty()) return "Nothing logged on $date."
-        val lines = day.entries.joinToString("\n") { describeEntry(it) }
-        return "$date totals: ${describeNutrients(day.totals)}\n$lines"
+        if (day.meals.isEmpty()) return "Nothing logged on $date."
+        val meals = day.meals.joinToString("\n") { group ->
+            val items = group.entries.joinToString("\n  ") { describeEntry(it) }
+            "${clock(group.meal.at)} \"${group.meal.label}\" meal_id=${group.meal.id}\n  $items"
+        }
+        return "$date totals: ${describeNutrients(day.totals)}\n$meals"
     }
 
     private suspend fun saveFood(args: JsonObject): String {
@@ -330,18 +351,28 @@ class ToolExecutor(
     }
 
     private suspend fun logIntake(args: JsonObject): String {
+        val mealId = args.string("meal_id")
+            ?: return "Error: meal_id is required — call start_meal first if this is a new meal."
         val targetId = args.string("target_id") ?: return "Error: target_id is required"
         val amount = args.number("amount") ?: return "Error: amount is required"
         val unit = args.string("unit") ?: return "Error: unit is required"
-        val meal = args.string("meal")?.let { raw -> Meal.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } }
-        val at = args.string("at")?.let { parseWhen(it) ?: return WHEN_ERROR } ?: Instant.now()
+        val at = args.string("at")?.let { parseWhen(it) ?: return WHEN_ERROR }
 
         val entry = when {
-            repo.food(targetId) != null -> repo.logFood(targetId, amount, unit, meal, at)
-            repo.batch(targetId) != null -> repo.logBatch(targetId, amount, unit, meal, at)
+            repo.food(targetId) != null -> repo.logFood(targetId, amount, unit, mealId, at)
+            repo.batch(targetId) != null -> repo.logBatch(targetId, amount, unit, mealId, at)
             else -> return "Error: no food or batch with id $targetId"
         }
-        return "Logged. entry_id=${entry.id} ${describeEntry(entry)}"
+        val mealLabel = repo.meal(mealId)?.label.orEmpty()
+        return "Logged to \"$mealLabel\". entry_id=${entry.id} ${describeEntry(entry)}"
+    }
+
+    private suspend fun startMeal(args: JsonObject): String {
+        val label = args.string("label")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return "Error: label is required — the user's own word, or a short description of what was eaten."
+        val at = args.string("at")?.let { parseWhen(it) ?: return WHEN_ERROR } ?: Instant.now()
+        val meal = repo.openMeal(label, at)
+        return "Started meal id=${meal.id} name=\"${meal.label}\". Log its items with this meal_id."
     }
 
     private suspend fun saveRecipe(args: JsonObject): String {
@@ -378,17 +409,11 @@ class ToolExecutor(
             return "Deleted entry $id."
         }
         val existing = repo.entry(id) ?: return "Error: no entry with id $id"
-        val meal = if (args.containsKey("meal")) {
-            args.string("meal")?.let { raw -> Meal.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } }
-        } else {
-            existing.meal
-        }
         val at = args.string("at")?.let { parseWhen(it) ?: return WHEN_ERROR }
         repo.reviseEntry(
             id = id,
             amount = args.number("amount") ?: existing.amount,
             unit = args.string("unit") ?: existing.unit,
-            meal = meal,
             at = at,
         )
         return "Revised entry $id."
@@ -499,7 +524,6 @@ class ToolExecutor(
 
     private fun describeEntry(entry: LogEntryEntity): String = buildString {
         append("${entry.amount} ${entry.unit} of \"${entry.label}\" (${entry.grams.toInt()} g)")
-        entry.meal?.let { append(" [${it.name.lowercase()}]") }
         append(" id=${entry.id}")
         entry.nutrients[Nutrient.KCAL]?.let { append(" ${it.toInt()} kcal") }
     }

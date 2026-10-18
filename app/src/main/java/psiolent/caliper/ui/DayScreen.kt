@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import psiolent.caliper.AppContainer
 import psiolent.caliper.data.LogEntryEntity
+import psiolent.caliper.data.MealEntity
 import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
 import psiolent.caliper.integrations.HealthConnect
@@ -40,11 +42,11 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 /**
- * The day, in three tiers: what the day adds up to, then roughly when, then each
- * item. Calories lead; protein, fat and carbs follow; fat and carb breakdowns are
- * visible because they matter; everything else is muted at the bottom.
+ * The day: what it adds up to, then each meal — named and marked with its own time —
+ * and the items eaten for it.
  */
 @Composable
 fun DayScreen(container: AppContainer) {
@@ -62,7 +64,7 @@ fun DayScreen(container: AppContainer) {
     }
 
     val totals = day?.totals ?: Nutrients.EMPTY
-    val entries = day?.entries.orEmpty()
+    val meals = day?.meals.orEmpty()
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -80,7 +82,8 @@ fun DayScreen(container: AppContainer) {
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             item { DayTotals(totals, burned) { permissionLauncher.launch(HealthConnect.permissions) } }
-            if (entries.isEmpty()) {
+
+            if (meals.isEmpty()) {
                 item {
                     Text(
                         "(nothing logged yet)",
@@ -90,14 +93,44 @@ fun DayScreen(container: AppContainer) {
                     )
                 }
             } else {
-                items(dayRows(entries), key = { it.key }) { row ->
-                    when (row) {
-                        is DayRow.Band -> BandHeader(row)
-                        is DayRow.Item -> ItemRow(row.entry)
+                meals.forEach { group ->
+                    item(key = "meal:${group.meal.id}") {
+                        MealHeader(
+                            meal = group.meal,
+                            kcal = group.entries.sumOf { it.nutrients[Nutrient.KCAL] ?: 0.0 },
+                        )
                     }
+                    items(group.entries, key = { it.id }) { entry -> ItemRow(entry) }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MealHeader(meal: MealEntity, kcal: Double) {
+    Column(Modifier.fillMaxWidth().padding(top = 22.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            Text(meal.label, style = MaterialTheme.typography.titleSmall)
+            Text(
+                "${round(kcal)} kcal",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            timeFormat.format(Instant.ofEpochMilli(meal.at).atZone(ZoneId.systemDefault())),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        HorizontalDivider(
+            modifier = Modifier.padding(top = 6.dp),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
     }
 }
 
@@ -211,26 +244,6 @@ private fun Breakdown(label: String, totals: Nutrients, parts: List<Nutrient>) {
 }
 
 @Composable
-private fun BandHeader(band: DayRow.Band) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        Text(
-            "${band.name}  \u00b7  ${band.timeLabel}",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            "${round(band.kcal)} kcal",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
 private fun ItemRow(entry: LogEntryEntity) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
@@ -256,47 +269,5 @@ private fun ItemRow(entry: LogEntryEntity) {
     }
 }
 
-/** Flatten entries into band headers followed by their items, in clock order. */
-private fun dayRows(entries: List<LogEntryEntity>): List<DayRow> {
-    val rows = mutableListOf<DayRow>()
-    entries.groupBy { bandOf(it.at) }.forEach { (name, group) ->
-        rows += DayRow.Band(name, group.sumOf { it.nutrients[Nutrient.KCAL] ?: 0.0 }, timeRange(group))
-        group.forEach { rows += DayRow.Item(it) }
-    }
-    return rows
-}
-
-/** The span a band covers, e.g. "13:14–13:17", or one time if they all match. */
-private fun timeRange(group: List<LogEntryEntity>): String {
-    val first = clock(group.first().at)
-    val last = clock(group.last().at)
-    return if (first == last) first else "$first\u2013$last"
-}
-
-private fun clock(epochMillis: Long): String =
-    timeFormat.format(Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()))
-
-private sealed interface DayRow {
-    val key: String
-
-    data class Band(val name: String, val kcal: Double, val timeLabel: String) : DayRow {
-        override val key get() = "band:$name"
-    }
-
-    data class Item(val entry: LogEntryEntity) : DayRow {
-        override val key get() = "item:${entry.id}"
-    }
-}
-
-private fun bandOf(epochMillis: Long): String {
-    val hour = Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).hour
-    return when (hour) {
-        in 5..11 -> "Morning"
-        in 12..16 -> "Afternoon"
-        in 17..21 -> "Evening"
-        else -> "Night"
-    }
-}
-
 private val dayFormat = DateTimeFormatter.ofPattern("EEE d MMM")
-private val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
+private val timeFormat: DateTimeFormatter = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)

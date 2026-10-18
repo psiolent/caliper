@@ -36,15 +36,25 @@ One dated preparation of a recipe.
 Because the snapshot is fixed, editing a recipe later changes future batches only.
 "How much is left" is never stored; it is derived from logged consumption.
 
+### `meals` — `MealEntity`
+A meal: a grouping the **agent** creates, holding the items eaten together.
+- `id`
+- `label` — the user's own word when they gave one ("lunch"), otherwise a short
+  description the agent chose ("Toast and eggs")
+- `at` — when the meal happened, shown once for the whole meal
+
+The app has no rule about what makes a meal. The agent is instructed that everything
+eaten in one session is one meal unless the user says otherwise, and it names each one.
+
 ### `log_entries` — `LogEntryEntity`
-Something eaten.
-- `id`, `targetType: FOOD|BATCH`, `targetId`
+A single item eaten.
+- `id`, `mealId` — the meal it belongs to
+- `targetType: FOOD|BATCH`, `targetId`
 - `label` — the target's name at log time, so history renders without a join
 - `amount`, `unit`, `grams` — the resolved weight
 - `nutrients: Nutrients` — **snapshotted** at log time, so corrections to a food
   do not rewrite history
-- `meal: Meal?` — optional (`BREAKFAST`, `LUNCH`, `DINNER`, `SNACK`)
-- `at` — epoch millis
+- `at` — epoch millis; defaults to the meal's time when not given
 
 ### `profile` — `ProfileEntity`
 A single row (`id = 1`) holding one short document: goals, targets, allergies,

@@ -24,9 +24,11 @@ Reads:
 - `get_log(date)` — a day's entries and totals.
 
 Writes:
+- `start_meal(label, at?)` — begin a meal; everything logged for it points at the id
+  this returns. The agent decides how items group; the app only stores it.
 - `save_food(...)` — create or update a food. Give `per_100g`, or an `fdc_id` and
   the app fetches the panel itself (the model never transcribes numbers).
-- `log(target_id, amount, unit, meal?, at?)` — the single logging path.
+- `log(meal_id, target_id, amount, unit, at?)` — add an item to a meal.
 - `save_recipe(...)`, `update_recipe(...)`, `make_batch(...)` — the recipe/batch
   lifecycle.
 - `revise_entry(entry_id, ...)` — fix or delete a logged entry.

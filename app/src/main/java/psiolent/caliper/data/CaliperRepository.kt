@@ -2,7 +2,6 @@ package psiolent.caliper.data
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import psiolent.caliper.domain.Meal
 import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
 import psiolent.caliper.domain.Serving
@@ -12,10 +11,10 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
 
-/** One day's log entries together with their summed nutrient totals. */
+/** One day: its meals in order, and the day's summed totals. */
 data class DayView(
     val date: LocalDate,
-    val entries: List<LogEntryEntity>,
+    val meals: List<MealWithEntries>,
     val totals: Nutrients,
 )
 
@@ -29,6 +28,7 @@ class CaliperRepository(private val db: CaliperDatabase) {
     private val foods = db.foods()
     private val recipes = db.recipes()
     private val batches = db.batches()
+    private val meals = db.meals()
     private val logs = db.logs()
     private val profile = db.profile()
     private val sessions = db.sessions()
@@ -37,13 +37,14 @@ class CaliperRepository(private val db: CaliperDatabase) {
     // --- Reads -------------------------------------------------------------
 
     fun observeDay(date: LocalDate): Flow<DayView> =
-        logs.observeBetween(startOfDay(date), startOfDay(date.plusDays(1))).map { entries ->
-            DayView(date, entries, entries.sumOfNutrients())
+        meals.observeBetween(startOfDay(date), startOfDay(date.plusDays(1))).map { groups ->
+            val ordered = groups.ordered()
+            DayView(date, ordered, ordered.flatMap { it.entries }.sumOfNutrients())
         }
 
     suspend fun day(date: LocalDate): DayView {
-        val entries = logs.between(startOfDay(date), startOfDay(date.plusDays(1)))
-        return DayView(date, entries, entries.sumOfNutrients())
+        val ordered = meals.between(startOfDay(date), startOfDay(date.plusDays(1))).ordered()
+        return DayView(date, ordered, ordered.flatMap { it.entries }.sumOfNutrients())
     }
 
     suspend fun searchFoods(query: String): List<FoodEntity> = foods.search(query)
@@ -75,17 +76,18 @@ class CaliperRepository(private val db: CaliperDatabase) {
 
     // --- Logging -----------------------------------------------------------
 
-    suspend fun logFood(foodId: String, amount: Double, unit: String, meal: Meal?, at: Instant): LogEntryEntity {
+    suspend fun logFood(foodId: String, amount: Double, unit: String, mealId: String, at: Instant? = null): LogEntryEntity {
         val food = foods.byId(foodId) ?: throw IllegalArgumentException("No food with id $foodId")
-        return log(TargetType.FOOD, food.id, food.name, food.per100g, food.servings, amount, unit, meal, at)
+        return log(mealId, TargetType.FOOD, food.id, food.name, food.per100g, food.servings, amount, unit, at)
     }
 
-    suspend fun logBatch(batchId: String, amount: Double, unit: String, meal: Meal?, at: Instant): LogEntryEntity {
+    suspend fun logBatch(batchId: String, amount: Double, unit: String, mealId: String, at: Instant? = null): LogEntryEntity {
         val batch = batches.byId(batchId) ?: throw IllegalArgumentException("No batch with id $batchId")
-        return log(TargetType.BATCH, batch.id, batch.name, batch.per100g, batch.servings, amount, unit, meal, at)
+        return log(mealId, TargetType.BATCH, batch.id, batch.name, batch.per100g, batch.servings, amount, unit, at)
     }
 
     private suspend fun log(
+        mealId: String,
         type: TargetType,
         targetId: String,
         label: String,
@@ -93,13 +95,14 @@ class CaliperRepository(private val db: CaliperDatabase) {
         servings: List<Serving>,
         amount: Double,
         unit: String,
-        meal: Meal?,
-        at: Instant,
+        at: Instant?,
     ): LogEntryEntity {
+        val meal = meals.byId(mealId) ?: throw IllegalArgumentException("No meal with id $mealId")
         val grams = resolveGrams(amount, unit, servings)
             ?: throw IllegalArgumentException("Cannot express $amount $unit of \"$label\"")
         val entry = LogEntryEntity(
             id = newId(),
+            mealId = mealId,
             targetType = type,
             targetId = targetId,
             label = label,
@@ -107,15 +110,26 @@ class CaliperRepository(private val db: CaliperDatabase) {
             unit = unit,
             grams = grams,
             nutrients = per100g.forGrams(grams),
-            meal = meal,
-            at = at.toEpochMilli(),
+            // An item with no time of its own belongs to when the meal happened.
+            at = (at ?: Instant.ofEpochMilli(meal.at)).toEpochMilli(),
         )
         logs.upsert(entry)
         return entry
     }
 
-    /** Replace an entry's amount, unit, meal, and time. The caller supplies complete values. */
-    suspend fun reviseEntry(id: String, amount: Double, unit: String, meal: Meal?, at: Instant? = null) {
+    // --- Meals -------------------------------------------------------------
+
+    /** The agent creates a meal; everything it logs for that meal points at it. */
+    suspend fun openMeal(label: String, at: Instant): MealEntity {
+        val meal = MealEntity(id = newId(), label = label, at = at.toEpochMilli())
+        meals.upsert(meal)
+        return meal
+    }
+
+    suspend fun meal(id: String): MealEntity? = meals.byId(id)
+
+    /** Replace an entry's amount, unit, and time. The caller supplies complete values. */
+    suspend fun reviseEntry(id: String, amount: Double, unit: String, at: Instant? = null) {
         val existing = logs.byId(id) ?: throw IllegalArgumentException("No log entry with id $id")
         val (per100g, servings) = targetPanel(existing)
             ?: throw IllegalArgumentException(
@@ -129,7 +143,6 @@ class CaliperRepository(private val db: CaliperDatabase) {
                 unit = unit,
                 grams = grams,
                 nutrients = per100g.forGrams(grams),
-                meal = meal,
                 at = at?.toEpochMilli() ?: existing.at,
             ),
         )
@@ -225,6 +238,7 @@ class CaliperRepository(private val db: CaliperDatabase) {
         foods = foods.all(),
         recipes = recipes.all(),
         batches = batches.all(),
+        meals = meals.all(),
         entries = logs.all(),
         sessions = sessions.all(),
         messages = messages.all(),
@@ -235,6 +249,7 @@ class CaliperRepository(private val db: CaliperDatabase) {
         backup.foods.forEach { foods.upsert(it) }
         backup.recipes.forEach { recipes.upsert(it) }
         backup.batches.forEach { batches.upsert(it) }
+        backup.meals.forEach { meals.upsert(it) }
         backup.entries.forEach { logs.upsert(it) }
         backup.sessions.forEach { sessions.upsert(it) }
         backup.messages.forEach { messages.upsert(it) }
@@ -250,3 +265,7 @@ class CaliperRepository(private val db: CaliperDatabase) {
 
 private fun List<LogEntryEntity>.sumOfNutrients(): Nutrients =
     fold(Nutrients.EMPTY) { total, entry -> total + entry.nutrients }
+
+/** Room returns relation rows in no particular order; a meal's items run in time. */
+private fun List<MealWithEntries>.ordered(): List<MealWithEntries> =
+    map { group -> group.copy(entries = group.entries.sortedBy { it.at }) }
