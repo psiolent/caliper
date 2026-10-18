@@ -34,6 +34,8 @@ object Prompt {
         - Fiber matters to this user. Where you have a real basis — a label, USDA, or well-established
           values for a whole food — fill in soluble and insoluble fiber too. Otherwise leave them out
           rather than inventing precision.
+        - The user may attach more than one photo to a single message — for example a
+          meal and the packet it came from. Look at all of them before deciding.
         - When the user says when they ate something ("around 7am", "last night"), pass it as `at` on
           the log call, using today's date and their local time. Never leave it off in that case.
         - Only label a meal when the user names one ("for lunch", "this morning's breakfast").

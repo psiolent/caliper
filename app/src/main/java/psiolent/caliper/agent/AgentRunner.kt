@@ -32,7 +32,7 @@ class AgentRunner(
     suspend fun send(
         sessionId: String,
         userText: String,
-        imageDataUrl: String? = null,
+        imageDataUrls: List<String> = emptyList(),
         onProgress: (String) -> Unit = {},
     ): String {
         val apiKey = settings.openRouterApiKey
@@ -47,7 +47,7 @@ class AgentRunner(
         val executor = ToolExecutor(repo, UsdaClient(settings.usdaApiKey))
         var cost = 0.0
         return try {
-            val model = settings.modelFor(imageDataUrl != null)
+            val model = settings.modelFor(imageDataUrls.isNotEmpty())
             val client = OpenRouterClient(apiKey)
             val messages = mutableListOf<JsonObject>()
             messages += textMessage("system", Prompt.SYSTEM)
@@ -55,8 +55,8 @@ class AgentRunner(
             repo.messages(sessionId).dropLast(1).forEach { previous ->
                 messages += textMessage(previous.role.name.lowercase(), previous.content)
             }
-            messages += if (imageDataUrl != null) {
-                userMessageWithImage(userText, imageDataUrl)
+            messages += if (imageDataUrls.isNotEmpty()) {
+                userMessageWithImages(userText, imageDataUrls)
             } else {
                 textMessage("user", userText)
             }

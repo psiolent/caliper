@@ -123,22 +123,28 @@ fun textMessage(role: String, text: String): JsonObject = buildJsonObject {
     put("content", text)
 }
 
-/** Build a user message whose content is a text part plus an image data URL. */
-fun userMessageWithImage(text: String, imageDataUrl: String): JsonObject = buildJsonObject {
+/** Build a user message whose content is a text part plus any number of images. */
+fun userMessageWithImages(text: String, imageDataUrls: List<String>): JsonObject = buildJsonObject {
     put("role", "user")
     put(
         "content",
         JsonArray(
-            listOf(
-                buildJsonObject {
-                    put("type", "text")
-                    put("text", text)
-                },
-                buildJsonObject {
-                    put("type", "image_url")
-                    put("image_url", buildJsonObject { put("url", imageDataUrl) })
-                },
-            ),
+            buildList {
+                add(
+                    buildJsonObject {
+                        put("type", "text")
+                        put("text", text)
+                    },
+                )
+                imageDataUrls.forEach { url ->
+                    add(
+                        buildJsonObject {
+                            put("type", "image_url")
+                            put("image_url", buildJsonObject { put("url", url) })
+                        },
+                    )
+                }
+            },
         ),
     )
 }

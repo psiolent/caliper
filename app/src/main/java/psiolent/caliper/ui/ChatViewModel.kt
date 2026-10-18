@@ -37,14 +37,14 @@ class ChatViewModel(
         viewModelScope.launch { session.value = agent.newSession() }
     }
 
-    fun send(text: String, imageDataUrl: String?) {
+    fun send(text: String, imageDataUrls: List<String>) {
         val id = session.value ?: return
-        if (text.isBlank() && imageDataUrl == null) return
+        if (text.isBlank() && imageDataUrls.isEmpty()) return
         viewModelScope.launch {
             _busy.value = true
             _status.value = "Thinking\u2026"
             try {
-                agent.send(id, text.ifBlank { "What is this?" }, imageDataUrl) { _status.value = it }
+                agent.send(id, text.ifBlank { "What is this?" }, imageDataUrls) { _status.value = it }
             } finally {
                 _busy.value = false
                 _status.value = null
