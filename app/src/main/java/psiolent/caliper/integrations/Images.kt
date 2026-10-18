@@ -3,10 +3,13 @@ package psiolent.caliper.integrations
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.net.Uri
 import android.util.Base64
+import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 
@@ -42,13 +45,48 @@ object Images {
      * so the full copy is capped in size before it ever reaches the model.
      */
     suspend fun toAttachment(context: Context, uri: Uri): Attachment? = withContext(Dispatchers.IO) {
-        val decoded = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: return@withContext null
+        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@withContext null
+        val upright = applyExifOrientation(bytes, decoded)
         try {
-            Attachment(dataUrl = encode(decoded, MAX_EDGE), thumbnail = encode(decoded, THUMB_EDGE))
+            Attachment(dataUrl = encode(upright, MAX_EDGE), thumbnail = encode(upright, THUMB_EDGE))
         } finally {
-            decoded.recycle()
+            upright.recycle()
         }
+    }
+
+    /**
+     * Cameras store photos in the sensor's orientation and record how to turn them
+     * upright in an EXIF tag that decoding ignores, so a portrait shot decodes on
+     * its side. Apply the tag before anything else sees the pixels.
+     */
+    private fun applyExifOrientation(bytes: ByteArray, bitmap: Bitmap): Bitmap {
+        val orientation = runCatching {
+            ExifInterface(ByteArrayInputStream(bytes))
+                .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.postRotate(90f)
+                matrix.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.postRotate(270f)
+                matrix.postScale(-1f, 1f)
+            }
+            else -> return bitmap
+        }
+        val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        if (rotated !== bitmap) bitmap.recycle()
+        return rotated
     }
 
     /** Decode the small copy for display. */
