@@ -48,19 +48,6 @@ Related: a turn that ran while the screen was off failed once with "Unable to re
 host openrouter.ai" — the phone suspends the network in low-power states. Another
 argument for a foreground service if long turns matter.
 
-## 4. A turn can repeat one failing call until it runs out of steps
-
-Seen while seeding test data: the model sent `servings` as a stringified map on
-`save_food`, was refused, and sent the same malformed call again — 38 times, until the
-turn gave up. Every call was correctly refused; the app simply executed the same failure
-as often as the model offered it.
-
-Now that `MAX_STEPS` is 100, that costs about five times what it did at 20. A turn
-should notice the same tool failing with the same error a few times and stop with
-something the user can act on, rather than spending the budget.
-
-`agent/AgentRunner.kt`.
-
 ## Known friction, deliberately left alone
 
 - **Serving names match exactly.** The model logged "1 banana" as unit `banana` against

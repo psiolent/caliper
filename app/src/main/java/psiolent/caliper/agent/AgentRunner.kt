@@ -77,6 +77,10 @@ class AgentRunner(
             onProgress("Thinking\u2026")
             var replyText: String? = null
             var steps = 0
+            // A step is a strike when nothing in it succeeded, attributed to its first
+            // refused tool. Counting steps rather than calls matters: the model sends
+            // several calls at once, so ten refused calls can be two round trips.
+            val refusals = RefusalStreak(MAX_REFUSAL_STEPS)
             while (replyText == null && steps < MAX_STEPS) {
                 steps++
                 val response = client.chat(model, messages, tools, webSearch = true)
@@ -94,8 +98,26 @@ class AgentRunner(
                 }
                 onProgress("Working\u2026 " + calls.joinToString(", ") { it.function.name })
                 messages += assistantToolCallMessage(message)
+                var failedTool: String? = null
+                var failedError = ""
+                var anySucceeded = false
                 calls.forEach { call ->
-                    messages += toolResultMessage(call.id, executor.execute(call.function.name, call.function.arguments))
+                    val result = executor.execute(call.function.name, call.function.arguments)
+                    if (result.startsWith("Error:")) {
+                        if (failedTool == null) {
+                            failedTool = call.function.name
+                            failedError = result
+                        }
+                    } else {
+                        anySucceeded = true
+                    }
+                    messages += toolResultMessage(call.id, result)
+                }
+
+                if (refusals.record(failedTool, anySucceeded)) {
+                    agentLog.append("── stuck: $failedTool refused ${refusals.steps} steps in a row, giving up")
+                    replyText = stuckReply(failedError)
+                    break
                 }
             }
 
@@ -145,13 +167,29 @@ class AgentRunner(
         }
     }
 
+    /** What to say when the same tool has been refused too many steps running. */
+    private fun stuckReply(error: String): String {
+        val detail = error.removePrefix("Error:").trim().trimEnd('.')
+        return "I kept hitting the same problem, so I stopped rather than looping: $detail. " +
+            "Anything saved before that is saved \u2014 ask me to continue and I'll try another way."
+    }
+
     private companion object {
         /**
          * How many model round trips one turn may take before it gives up and offers
          * to continue. Generous on purpose: a single photo of a sushi roll burned
          * through 20, and the model is cheap (all development cost about 11 cents).
-         * The bound exists to stop a runaway loop, not to hurry the agent.
+         * The bound exists to stop a runaway, not to hurry the agent — a stuck turn is
+         * caught much earlier by [MAX_REFUSAL_STEPS].
          */
         const val MAX_STEPS = 100
+
+        /**
+         * How many steps running the same tool may be refused before the turn gives up.
+         * A step counts once, however many calls it made, and any success in a step
+         * resets the count — so this is ten round trips of getting nowhere, which is a
+         * lot of leeway, not a budget.
+         */
+        const val MAX_REFUSAL_STEPS = 10
     }
 }

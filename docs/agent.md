@@ -16,7 +16,6 @@ Each turn sends, in order:
 Nothing older than the current session is included. The loop is bounded by
 `AgentRunner.MAX_STEPS` (100), generous because the model is cheap and a photo can
 take many steps; the bound stops a runaway, it does not hurry the agent.
-
 ## What the prompt owns
 
 Some rules deliberately live in the prompt rather than in the app, because they are
@@ -108,5 +107,13 @@ adb shell run-as psiolent.caliper cat files/agent-log.txt
 ## Errors
 
 Tool failures are returned to the model as text (`"Error: ..."`), so it can adapt
-rather than derail. If the loop hits `MAX_STEPS`, the turn ends saying the work is
-saved and offering to continue.
+rather than derail. Two guards stop a turn that cannot adapt:
+
+- **Stuck**: if the same tool is refused for ten steps in a row, with nothing succeeding
+  in between, the turn stops and says what kept failing. A step counts once however many
+  calls it made, and any success resets the count (`RefusalStreak`).
+- **Out of room**: if the loop reaches `MAX_STEPS`, the turn ends saying the work is
+  saved and offering to continue.
+
+Both are recorded in the agent log, since a turn that gave up is the thing worth reading
+about later.
