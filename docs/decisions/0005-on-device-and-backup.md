@@ -8,9 +8,11 @@ is automatic, uses the Google account already on the phone, and needs no code or
 OAuth — it covers the database and shared preferences. The manual export is a
 safety net the user controls.
 
-**Consequence.** Keep the database small. Meal photos are never persisted — they
-exist only for the turn that reads them — so the 25 MB Auto Backup cap is never
-approached. The manual export serializes every entity as JSON.
+**Consequence.** Keep the database small. The full photo is never persisted — it
+exists only for the turn that reads it — so the 25 MB Auto Backup cap is never
+approached. A small copy (about 2.5 KB) is kept on the message so the transcript can
+show what was sent, which is small enough not to matter. The manual export serializes
+every entity as JSON.
 
 The settings file (holding the OpenRouter and USDA keys) is excluded from cloud
 backup and device transfer via `data_extraction_rules.xml` and `backup_rules.xml`,

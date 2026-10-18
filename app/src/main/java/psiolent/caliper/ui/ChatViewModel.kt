@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import psiolent.caliper.agent.AgentRunner
 import psiolent.caliper.data.CaliperRepository
 import psiolent.caliper.data.MessageEntity
+import psiolent.caliper.integrations.Attachment
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModel(
@@ -37,14 +38,14 @@ class ChatViewModel(
         viewModelScope.launch { session.value = agent.newSession() }
     }
 
-    fun send(text: String, imageDataUrls: List<String>) {
+    fun send(text: String, photos: List<Attachment>) {
         val id = session.value ?: return
-        if (text.isBlank() && imageDataUrls.isEmpty()) return
+        if (text.isBlank() && photos.isEmpty()) return
         viewModelScope.launch {
             _busy.value = true
             _status.value = "Thinking\u2026"
             try {
-                agent.send(id, text.ifBlank { "What is this?" }, imageDataUrls) { _status.value = it }
+                agent.send(id, text.ifBlank { "What is this?" }, photos) { _status.value = it }
             } finally {
                 _busy.value = false
                 _status.value = null

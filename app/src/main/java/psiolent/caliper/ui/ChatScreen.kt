@@ -10,11 +10,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -179,7 +182,7 @@ fun ChatScreen(container: AppContainer) {
             }
             Button(
                 onClick = {
-                    viewModel.send(input.trim(), attachments.map { it.dataUrl })
+                    viewModel.send(input.trim(), attachments)
                     input = ""
                     attachments = emptyList()
                 },
@@ -196,7 +199,7 @@ fun ChatScreen(container: AppContainer) {
 /** One attached photo, with a small remove control in its top-right corner. */
 @Composable
 private fun AttachmentThumb(attachment: Attachment, onRemove: () -> Unit) {
-    val bitmap = remember(attachment) { Images.decodeThumbnail(attachment) }
+    val bitmap = remember(attachment) { Images.decodeThumbnail(attachment.thumbnail) }
     Box(Modifier.size(76.dp)) {
         val image = bitmap?.asImageBitmap()
         if (image != null) {
@@ -234,6 +237,7 @@ private fun AttachmentThumb(attachment: Attachment, onRemove: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun MessageBubble(message: MessageEntity) {
     val isUser = message.role == MessageRole.USER
@@ -246,7 +250,31 @@ internal fun MessageBubble(message: MessageEntity) {
             shape = MaterialTheme.shapes.medium,
             modifier = Modifier.widthIn(max = 300.dp),
         ) {
-            Text(message.content, modifier = Modifier.padding(10.dp))
+            Column(Modifier.padding(10.dp)) {
+                if (message.thumbs.isNotEmpty()) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        message.thumbs.forEach { SentPhoto(it) }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+                Text(message.content)
+            }
         }
     }
+}
+
+/** A small copy of a photo that was sent, so the transcript shows what went with it. */
+@Composable
+private fun SentPhoto(dataUrl: String) {
+    val bitmap = remember(dataUrl) { Images.decodeThumbnail(dataUrl) }
+    val image = bitmap?.asImageBitmap() ?: return
+    Image(
+        bitmap = image,
+        contentDescription = "Photo sent",
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.size(64.dp).clip(MaterialTheme.shapes.small),
+    )
 }

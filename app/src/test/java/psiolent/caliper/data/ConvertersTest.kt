@@ -38,4 +38,15 @@ class ConvertersTest {
         val estimated = setOf(Nutrient.SOLUBLE_FIBER, Nutrient.POLYUNSATURATED_FAT)
         assertEquals(estimated, converters.stringToEstimated(converters.estimatedToString(estimated)))
     }
+
+    @Test
+    fun `photo thumbnails survive a round trip`() {
+        val thumbs = listOf("data:image/jpeg;base64,AAAA", "data:image/jpeg;base64,BBBB")
+        assertEquals(thumbs, converters.stringToThumbs(converters.thumbsToString(thumbs)))
+    }
+
+    @Test
+    fun `a message with no photos round trips as none`() {
+        assertEquals(emptyList<String>(), converters.stringToThumbs(converters.thumbsToString(emptyList())))
+    }
 }

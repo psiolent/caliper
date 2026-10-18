@@ -14,8 +14,9 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 
 /**
- * A photo held for the current turn: the full image sent to the model, and a small
- * one kept for the thumbnail strip. Neither is ever persisted.
+ * A photo attached to a turn: the full image sent to the model, and a small copy.
+ * The full image is never persisted. The small copy is kept on the message, so the
+ * transcript can show what was sent for about as little as a thumbnail costs.
  */
 data class Attachment(val dataUrl: String, val thumbnail: String)
 
@@ -89,9 +90,9 @@ object Images {
         return rotated
     }
 
-    /** Decode the small copy for display. */
-    fun decodeThumbnail(attachment: Attachment): Bitmap? = runCatching {
-        val bytes = Base64.decode(attachment.thumbnail.substringAfter(','), Base64.DEFAULT)
+    /** Decode a small copy for display. */
+    fun decodeThumbnail(dataUrl: String): Bitmap? = runCatching {
+        val bytes = Base64.decode(dataUrl.substringAfter(','), Base64.DEFAULT)
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
     }.getOrNull()
 

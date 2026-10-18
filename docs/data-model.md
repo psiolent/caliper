@@ -66,9 +66,13 @@ dietary constraints, preferences. Always included in context.
 The conversation transcript. `MessageRole` is `USER` or `ASSISTANT`. Stored for
 the user to read back; the agent never reads these.
 
+A user message may carry `thumbs: List<String>` — small copies (a ~2.5 KB JPEG data
+URL each) of the photos sent with it, so the transcript can show what was sent. The
+full image is still never kept.
+
 ## Notes
 
-- Schema version is 3. Migrations live in `CaliperDatabase`; two of them rebuilt
+- Schema version is 4. Migrations live in `CaliperDatabase`; two of them rebuilt
   `log_entries` as the meal model settled, and the data was wiped alongside both by
   agreement with the user.
 - An absent nutrient in a panel means *unknown*, not zero.

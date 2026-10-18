@@ -77,15 +77,6 @@ Related: a turn that ran while the screen was off failed once with "Unable to re
 host openrouter.ai" — the phone suspends the network in low-power states. Another
 argument for a foreground service if long turns matter.
 
-## 7. Sent photos are not shown in the chat
-
-The user's message shows only its text, so there is no sign a photo was sent. Note
-that photos are deliberately never persisted — they exist only for the turn that reads
-them — so showing them *after the fact* would need a decision about storing them (and
-what that means for backup size). Showing them while the turn is live is the easy part.
-
-`ui/ChatScreen.kt`, `integrations/Images.kt`.
-
 ## Known friction, deliberately left alone
 
 - **Serving names match exactly.** The model logged "1 banana" as unit `banana` against

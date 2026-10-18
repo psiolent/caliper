@@ -1,5 +1,6 @@
 package psiolent.caliper.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.PrimaryKey
@@ -139,5 +140,12 @@ data class MessageEntity(
     val sessionId: String,
     val role: MessageRole,
     val content: String,
+    /**
+     * Small copies of the photos sent with this message, so the transcript can show
+     * what was sent without keeping the full image. Stored as JSON in one column,
+     * like the other value objects.
+     */
+    @ColumnInfo(defaultValue = "'[]'")
+    val thumbs: List<String> = emptyList(),
     val at: Long,
 )

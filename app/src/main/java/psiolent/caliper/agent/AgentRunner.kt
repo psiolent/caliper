@@ -8,6 +8,7 @@ import psiolent.caliper.data.MessageRole
 import psiolent.caliper.data.SessionEntity
 import psiolent.caliper.data.SettingsStore
 import psiolent.caliper.integrations.AgentLog
+import psiolent.caliper.integrations.Attachment
 import psiolent.caliper.integrations.UsdaClient
 import java.time.Instant
 import java.time.LocalDate
@@ -35,7 +36,7 @@ class AgentRunner(
     suspend fun send(
         sessionId: String,
         userText: String,
-        imageDataUrls: List<String> = emptyList(),
+        photos: List<Attachment> = emptyList(),
         onProgress: (String) -> Unit = {},
     ): String {
         val apiKey = settings.openRouterApiKey
@@ -43,12 +44,20 @@ class AgentRunner(
             return reply(sessionId, "Add your OpenRouter API key in Settings, then try again.", 0.0)
         }
 
+        val imageDataUrls = photos.map { it.dataUrl }
         repo.addMessage(
-            MessageEntity(sessionId = sessionId, role = MessageRole.USER, content = userText, at = Instant.now().toEpochMilli()),
+            MessageEntity(
+                sessionId = sessionId,
+                role = MessageRole.USER,
+                content = userText,
+                // The small copies, so the transcript can show the photo that was sent.
+                thumbs = photos.map { it.thumbnail },
+                at = Instant.now().toEpochMilli(),
+            ),
         )
 
         val executor = ToolExecutor(repo, UsdaClient(settings.usdaApiKey), agentLog)
-        agentLog.append("── user: ${userText.ifBlank { "(no text)" }} (${imageDataUrls.size} photo(s))")
+        agentLog.append("── user: ${userText.ifBlank { "(no text)" }} (${photos.size} photo(s))")
         var cost = 0.0
         return try {
             val model = settings.modelFor(imageDataUrls.isNotEmpty())

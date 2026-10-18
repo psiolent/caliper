@@ -3,6 +3,7 @@ package psiolent.caliper.data
 import androidx.room.TypeConverter
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.SetSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
@@ -48,4 +49,12 @@ class Converters {
     @TypeConverter
     fun stringToEstimated(value: String): Set<Nutrient> =
         json.decodeFromString(SetSerializer(Nutrient.serializer()), value)
+
+    @TypeConverter
+    fun thumbsToString(value: List<String>): String =
+        json.encodeToString(ListSerializer(String.serializer()), value)
+
+    @TypeConverter
+    fun stringToThumbs(value: String): List<String> =
+        json.decodeFromString(ListSerializer(String.serializer()), value)
 }

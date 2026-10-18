@@ -19,7 +19,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SessionEntity::class,
         MessageEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -76,9 +76,19 @@ abstract class CaliperDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * A message can now carry small copies of the photos sent with it, so the
+         * transcript can show what was sent. Existing messages simply have none.
+         */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `messages` ADD COLUMN `thumbs` TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
         fun open(context: Context): CaliperDatabase =
             Room.databaseBuilder(context.applicationContext, CaliperDatabase::class.java, "caliper.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
     }
 }
