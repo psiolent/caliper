@@ -15,13 +15,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -34,6 +37,7 @@ import psiolent.caliper.AppContainer
 import psiolent.caliper.agent.ModelInfo
 import psiolent.caliper.agent.OpenRouterClient
 import psiolent.caliper.data.BackupCodec
+import kotlin.math.abs
 
 @Composable
 fun SettingsScreen(container: AppContainer) {
@@ -48,6 +52,17 @@ fun SettingsScreen(container: AppContainer) {
     var models by remember { mutableStateOf<List<ModelInfo>>(emptyList()) }
     var status by remember { mutableStateOf<String?>(null) }
     var revealKeys by rememberSaveable { mutableStateOf(false) }
+
+    // The daily goal: which way it moves the day's burn, and by how much.
+    var goalDirection by rememberSaveable { mutableIntStateOf(settings.dailyAdjustmentKcal.compareTo(0)) }
+    var goalAmount by rememberSaveable {
+        mutableStateOf(
+            settings.dailyAdjustmentKcal.takeIf { it != 0 }?.let { abs(it).toString() } ?: "500",
+        )
+    }
+    fun applyGoal() {
+        settings.dailyAdjustmentKcal = goalDirection * (goalAmount.toIntOrNull() ?: 0)
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) scope.launch {
@@ -110,6 +125,36 @@ fun SettingsScreen(container: AppContainer) {
             visualTransformation = if (revealKeys) VisualTransformation.None else PasswordVisualTransformation(),
         )
 
+        Text("Calorie goal", style = MaterialTheme.typography.titleSmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("Hold" to 0, "Deficit" to -1, "Surplus" to 1).forEach { (label, direction) ->
+                GoalChoice(label, goalDirection == direction) {
+                    goalDirection = direction
+                    applyGoal()
+                }
+            }
+        }
+        if (goalDirection != 0) {
+            OutlinedTextField(
+                value = goalAmount,
+                onValueChange = {
+                    goalAmount = it.filter(Char::isDigit).take(5)
+                    applyGoal()
+                },
+                label = {
+                    Text(if (goalDirection < 0) "Daily deficit (kcal)" else "Daily surplus (kcal)")
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            Text(
+                "Measured against the calories Health Connect says the day will burn, so it " +
+                    "needs that to be set up.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
         Button(onClick = {
             scope.launch {
                 status = "Loading\u2026"
@@ -144,5 +189,18 @@ fun SettingsScreen(container: AppContainer) {
             "Android Auto Backup also copies the database to your Google Drive automatically.",
             style = MaterialTheme.typography.bodySmall,
         )
+    }
+}
+
+/**
+ * One of the three daily-goal choices. The chosen one is drawn as a filled button, so the
+ * current goal is readable at a glance rather than by finding a check mark.
+ */
+@Composable
+private fun GoalChoice(label: String, selected: Boolean, onClick: () -> Unit) {
+    if (selected) {
+        Button(onClick = onClick) { Text(label) }
+    } else {
+        TextButton(onClick = onClick) { Text(label) }
     }
 }

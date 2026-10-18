@@ -33,6 +33,15 @@ class SettingsStore(context: Context) {
         get() = prefs.getFloat(KEY_TOTAL_COST, 0f).toDouble()
         set(value) = prefs.edit().putFloat(KEY_TOTAL_COST, value.toFloat()).apply()
 
+    /**
+     * The daily deficit (negative) or surplus (positive), in kilocalories, set against
+     * the calories the day will burn. Zero holds. Meaningless without a burn to measure
+     * against, so it does nothing while Health Connect is unavailable.
+     */
+    var dailyAdjustmentKcal: Int
+        get() = prefs.getInt(KEY_DAILY_ADJUSTMENT, 0)
+        set(value) = prefs.edit().putInt(KEY_DAILY_ADJUSTMENT, value).apply()
+
     fun recordCost(cost: Double) {
         if (cost > 0) totalCost += cost
     }
@@ -46,6 +55,7 @@ class SettingsStore(context: Context) {
         const val KEY_CHAT_MODEL = "model.chat"
         const val KEY_VISION_MODEL = "model.vision"
         const val KEY_TOTAL_COST = "usage.totalCost"
+        const val KEY_DAILY_ADJUSTMENT = "goal.dailyAdjustmentKcal"
 
         const val DEFAULT_CHAT_MODEL = "deepseek/deepseek-v4.1-flash"
     }

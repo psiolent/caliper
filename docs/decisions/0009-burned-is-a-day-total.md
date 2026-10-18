@@ -18,6 +18,10 @@ keeping:
 
 - The resting part is an estimate derived from the profile, not a measurement.
 - The whole figure is only as fresh as its source. The phone's own active-calorie
-  records stopped at 12:48 one afternoon and nothing was wrong. So the line names its
-  reading time once the newest record is more than half an hour old, and the day
-  re-reads the figure every minute while it is open.
+  records stopped at 12:48 one afternoon and nothing was wrong; the figure sat still
+  because the person was sitting still.
+
+So the Day screen shows the burn's resting and active parts beneath the total, which is
+what makes a still figure explicable at a glance. A reading-time note was tried first and
+removed: the split says the same thing without a second number to read. The day re-reads
+the figure every minute while it is open, so it moves as soon as the source does.

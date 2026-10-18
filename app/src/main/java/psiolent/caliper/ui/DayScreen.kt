@@ -4,15 +4,19 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.HorizontalDivider
@@ -31,6 +35,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,15 +45,16 @@ import kotlinx.coroutines.delay
 import psiolent.caliper.AppContainer
 import psiolent.caliper.data.LogEntryEntity
 import psiolent.caliper.data.MealEntity
+import psiolent.caliper.domain.CalorieBalance
 import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
 import psiolent.caliper.integrations.HealthConnect
-import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import kotlin.math.abs
 
 /**
  * The day: what it adds up to, then each meal — named and marked with its own time —
@@ -103,6 +110,7 @@ fun DayScreen(container: AppContainer) {
                 DayTotals(
                     totals = totals,
                     burned = burned,
+                    adjustmentKcal = container.settings.dailyAdjustmentKcal,
                     onConnect = { permissionLauncher.launch(HealthConnect.permissions) },
                     onFullBreakdown = {
                         breakdown = BreakdownRequest(
@@ -184,33 +192,40 @@ private fun MealHeader(meal: MealEntity, kcal: Double, first: Boolean) {
 private fun DayTotals(
     totals: Nutrients,
     burned: HealthConnect.Burned?,
+    adjustmentKcal: Int,
     onConnect: () -> Unit,
     onFullBreakdown: () -> Unit,
 ) {
+    val eaten = totals[Nutrient.KCAL] ?: 0.0
+    val measured = (burned as? HealthConnect.Burned.Value)?.takeIf { it.totalKcal != null }
+
     Column(Modifier.padding(top = 8.dp)) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                round(totals[Nutrient.KCAL] ?: 0.0),
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Bold,
-                // The one number the screen is about: the accent marks it, and the two
-                // watched nutrients below, so colour here means "this matters".
-                color = MaterialTheme.colorScheme.primary,
+        if (measured == null || measured.totalKcal == null) {
+            // Nothing to measure the day against, so say what has been eaten and stop.
+            CalorieHero(eaten, "kcal eaten", MaterialTheme.colorScheme.primary)
+        } else {
+            val balance = CalorieBalance(
+                eatenKcal = eaten,
+                burnKcal = measured.totalKcal,
+                adjustmentKcal = adjustmentKcal,
             )
-            Text(
-                " kcal eaten",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 8.dp, bottom = 6.dp),
+            val over = balance.leftKcal < 0
+            CalorieHero(
+                value = abs(balance.leftKcal),
+                label = if (over) "kcal over" else "kcal left today",
+                color = if (over) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
             )
+            CalorieBar(balance)
+            CalorieLedger(balance)
+            BurnSplit(balance, measured)
         }
 
         when (burned) {
-            is HealthConnect.Burned.Value -> Text(
-                burnedLine(burned),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            is HealthConnect.Burned.Value -> Unit
             HealthConnect.Burned.NotGranted -> TextButton(onClick = onConnect, contentPadding = PaddingValues(0.dp)) {
                 Text("Connect Health Connect to show calories burned")
             }
@@ -254,6 +269,128 @@ private fun DayTotals(
             }
         }
     }
+}
+
+/** The one number the screen is about, with what it is under it. */
+@Composable
+private fun CalorieHero(value: Double, label: String, color: Color) {
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text(
+            round(value),
+            style = MaterialTheme.typography.displayMedium,
+            fontWeight = FontWeight.Bold,
+            color = color,
+        )
+        Text(
+            " $label",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 8.dp, bottom = 6.dp),
+        )
+    }
+}
+
+/**
+ * The day's allowance as one bar: what has been eaten, the slice a deficit holds back,
+ * and what is left. It is scaled to include a surplus, so the three always add up to the
+ * full width and the same bar works for either goal.
+ */
+@Composable
+private fun CalorieBar(balance: CalorieBalance) {
+    val span = balance.burnKcal + maxOf(balance.adjustmentKcal, 0)
+    if (span <= 0.0) return
+    val eaten = (balance.eatenKcal / span).coerceIn(0.0, 1.0)
+    val deficit = (balance.deficitKcal / span).coerceIn(0.0, 1.0 - eaten)
+    val left = 1.0 - eaten - deficit
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 14.dp)
+            .height(10.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        if (eaten > 0.0) {
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .weight(eaten.toFloat())
+                    .background(
+                        if (balance.leftKcal < 0) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                    ),
+            )
+        }
+        if (deficit > 0.0) {
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .weight(deficit.toFloat())
+                    .background(MaterialTheme.colorScheme.outline),
+            )
+        }
+        if (left > 0.0) Box(Modifier.fillMaxHeight().weight(left.toFloat()))
+    }
+}
+
+/** What the bar is made of, in numbers: eaten, the deficit or surplus, and the burn. */
+@Composable
+private fun CalorieLedger(balance: CalorieBalance) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Amount(balance.eatenKcal, "eaten")
+        if (balance.adjustmentKcal != 0) {
+            Amount(
+                value = abs(balance.adjustmentKcal).toDouble(),
+                label = if (balance.adjustmentKcal < 0) "deficit" else "surplus",
+            )
+        }
+        Amount(balance.burnKcal, "will burn")
+    }
+}
+
+@Composable
+private fun Amount(value: Double, label: String) {
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text(
+            round(value),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 6.dp, bottom = 3.dp),
+        )
+    }
+}
+
+/**
+ * How the burn is made up. Worth showing because the resting part covers the whole day
+ * while the active part is only what has happened so far — which is why the total sits
+ * still for hours and then moves when you do.
+ */
+@Composable
+private fun BurnSplit(balance: CalorieBalance, measured: HealthConnect.Burned.Value) {
+    val resting = measured.activeKcal?.let { balance.burnKcal - it }
+    val parts = buildList {
+        resting?.let { add("${round(it)} resting") }
+        // An absent active figure is said out loud: a resting-only total looks complete.
+        add(measured.activeKcal?.let { "${round(it)} active" } ?: "no activity recorded")
+    }
+    Text(
+        parts.joinToString("  \u00b7  "),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 8.dp),
+    )
 }
 
 @Composable
@@ -318,34 +455,6 @@ private fun portion(entry: LogEntryEntity): String =
     } else {
         "${round(entry.amount)} \u00d7 ${entry.unit} \u00b7 ${round(entry.grams)} g"
     }
-
-/**
- * The burned line. Health Connect's total is not a running tally: it is the active
- * calories so far plus a resting burn for the whole day, so it reads as what today will
- * come to if nothing more happens — and it rises if you move again. Said as a tally it
- * looks wrong; said as a day's figure it is right.
- *
- * Once the reading is old enough to explain a number that is not moving, when it is
- * from is appended. Health Connect aggregates over the whole day, so the figure holds
- * still for as long as the source stays quiet, and a source can stay quiet for hours
- * without anything being wrong.
- */
-private fun burnedLine(burned: HealthConnect.Burned.Value): String {
-    val line = when {
-        burned.totalKcal != null && burned.activeKcal != null ->
-            "will burn ${round(burned.totalKcal)} kcal today \u00b7 ${round(burned.activeKcal)} active so far"
-        burned.totalKcal != null -> "will burn ${round(burned.totalKcal)} kcal today"
-        burned.activeKcal != null ->
-            "burned ${round(burned.activeKcal)} kcal active so far (resting burn not recorded)"
-        else -> return "No calories burned recorded for this day"
-    }
-    val recorded = burned.recordedAt ?: return line
-    if (Duration.between(recorded, Instant.now()) < STALE_AFTER) return line
-    return "$line \u00b7 as of " + timeFormat.format(recorded.atZone(ZoneId.systemDefault()))
-}
-
-/** A recording source quieter than this is worth saying out loud. */
-private val STALE_AFTER: Duration = Duration.ofMinutes(30)
 
 private val dayFormat = DateTimeFormatter.ofPattern("EEE d MMM")
 private val timeFormat: DateTimeFormatter = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
