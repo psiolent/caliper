@@ -9,7 +9,7 @@ internal fun round(value: Double): String =
 
 /** One nutrient as "value unit name", e.g. "13 g protein" or "380 kcal". */
 internal fun formatNutrient(nutrient: Nutrient, value: Double): String =
-    if (nutrient == Nutrient.KCAL) "${round(value)} kcal" else "${round(value)} ${nutrient.unit} ${nutrient.name.lowercase()}"
+    if (nutrient == Nutrient.KCAL) "${round(value)} kcal" else "${round(value)} ${nutrient.unit} ${nutrient.shortName}"
 
 private val SUMMARY_ORDER = listOf(
     Nutrient.KCAL,

@@ -10,21 +10,21 @@ import kotlinx.serialization.Serializable
  * arbitrary nutrient list.
  */
 @Serializable
-enum class Nutrient(val displayName: String, val unit: String) {
-    KCAL("Calories", "kcal"),
-    PROTEIN("Protein", "g"),
-    FAT("Total fat", "g"),
-    SATURATED_FAT("Saturated fat", "g"),
-    TRANS_FAT("Trans fat", "g"),
-    MONOUNSATURATED_FAT("Monounsaturated fat", "g"),
-    POLYUNSATURATED_FAT("Polyunsaturated fat", "g"),
-    CARBS("Carbohydrates", "g"),
-    FIBER("Fiber", "g"),
-    SOLUBLE_FIBER("Soluble fiber", "g"),
-    INSOLUBLE_FIBER("Insoluble fiber", "g"),
-    SUGARS("Sugars", "g"),
-    SODIUM("Sodium", "mg"),
-    CHOLESTEROL("Cholesterol", "mg"),
+enum class Nutrient(val displayName: String, val unit: String, val shortName: String) {
+    KCAL("Calories", "kcal", "calories"),
+    PROTEIN("Protein", "g", "protein"),
+    FAT("Total fat", "g", "fat"),
+    SATURATED_FAT("Saturated fat", "g", "saturated"),
+    TRANS_FAT("Trans fat", "g", "trans"),
+    MONOUNSATURATED_FAT("Monounsaturated fat", "g", "mono"),
+    POLYUNSATURATED_FAT("Polyunsaturated fat", "g", "poly"),
+    CARBS("Carbohydrates", "g", "carbs"),
+    FIBER("Fiber", "g", "fiber"),
+    SOLUBLE_FIBER("Soluble fiber", "g", "soluble fiber"),
+    INSOLUBLE_FIBER("Insoluble fiber", "g", "insoluble fiber"),
+    SUGARS("Sugars", "g", "sugars"),
+    SODIUM("Sodium", "mg", "sodium"),
+    CHOLESTEROL("Cholesterol", "mg", "cholesterol"),
 }
 
 /**
