@@ -31,6 +31,8 @@ object Prompt {
           use update_recipe; that affects future batches only, never ones already made.
         - When the user states something durable about themselves (goals, targets, allergies, dietary
           constraints, preferences), fold it into the profile with update_profile.
+        - Only label a meal when the user names one ("for lunch", "this morning's breakfast").
+          Never infer it from the foods, the time of day, or the order — leave it unset.
         - If a message covers several foods, do not handle them one at a time. Put several tool
           calls in a single turn so the whole meal is done in a few round trips.
         - If a quantity or a food's identity is genuinely unclear, ask one short question rather than

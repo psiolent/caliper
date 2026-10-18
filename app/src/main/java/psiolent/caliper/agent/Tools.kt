@@ -88,7 +88,7 @@ object ToolSchema {
             "target_id" to stringParam("Id of the food or batch."),
             "amount" to numberParam("How much was eaten."),
             "unit" to stringParam("Unit, e.g. g, oz, cup, slice."),
-            "meal" to enumParam("Optional meal label.", "BREAKFAST", "LUNCH", "DINNER", "SNACK"),
+            "meal" to enumParam("Only if the user named a meal. Omit otherwise.", "BREAKFAST", "LUNCH", "DINNER", "SNACK"),
             "at" to stringParam("Optional ISO-8601 timestamp; defaults to now."),
         ),
         required = listOf("target_id", "amount", "unit"),

@@ -44,7 +44,8 @@ fun LibraryScreen(container: AppContainer) {
         items(batches, key = { it.id }) { batch ->
             ReadOnlyRow(
                 title = batch.name,
-                subtitle = "${round(batch.totalGrams)} g",
+                subtitle = "${round(batch.totalGrams)} g in total",
+                detail = batch.per100g.summary(),
                 onDelete = { scope.launch { repo.deleteBatch(batch) } },
             )
         }
@@ -54,7 +55,7 @@ fun LibraryScreen(container: AppContainer) {
         items(recipes, key = { it.id }) { recipe ->
             ReadOnlyRow(
                 title = recipe.name,
-                subtitle = "${recipe.ingredients.size} ingredients \u00b7 ${round(recipe.yieldGrams)} g",
+                subtitle = "${recipe.ingredients.size} ingredients \u00b7 makes ${round(recipe.yieldGrams)} g",
                 onDelete = { scope.launch { repo.deleteRecipe(recipe) } },
             )
         }
@@ -64,7 +65,12 @@ fun LibraryScreen(container: AppContainer) {
         items(foods, key = { it.id }) { food ->
             ReadOnlyRow(
                 title = food.name,
-                subtitle = listOfNotNull(food.brand, food.source.name.lowercase()).joinToString(" \u00b7 "),
+                subtitle = listOfNotNull(
+                    food.brand,
+                    food.source.name.lowercase(),
+                    if (food.estimated.isEmpty()) null else "${food.estimated.size} values estimated",
+                ).joinToString(" \u00b7 "),
+                detail = "per 100 g: ${food.per100g.summary()}",
                 onDelete = { scope.launch { repo.deleteFood(food) } },
             )
         }
@@ -86,7 +92,7 @@ private fun Empty(text: String) {
 }
 
 @Composable
-private fun ReadOnlyRow(title: String, subtitle: String, onDelete: () -> Unit) {
+private fun ReadOnlyRow(title: String, subtitle: String, detail: String? = null, onDelete: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -96,6 +102,9 @@ private fun ReadOnlyRow(title: String, subtitle: String, onDelete: () -> Unit) {
             Text(title)
             if (subtitle.isNotBlank()) {
                 Text(subtitle, style = MaterialTheme.typography.bodySmall)
+            }
+            detail?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         TextButton(onClick = onDelete) { Text("Delete") }
