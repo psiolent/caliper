@@ -31,11 +31,21 @@ object HealthConnect {
         available(context) &&
             HealthConnectClient.getOrCreate(context).permissionController.getGrantedPermissions().containsAll(permissions)
 
-    /** Active kilocalories burned on [date], or null when unavailable or not granted. */
-    suspend fun burnedCalories(context: Context, date: LocalDate): Double? {
-        if (!available(context)) return null
+    /**
+     * Whether calories burned can be read, kept distinct from whether any were
+     * recorded — "connected but empty" must not look like "not connected".
+     */
+    sealed interface Burned {
+        data object Unavailable : Burned
+        data object NotGranted : Burned
+        /** Granted; [kcal] is null when nothing has been recorded for the day. */
+        data class Value(val kcal: Double?) : Burned
+    }
+
+    suspend fun burned(context: Context, date: LocalDate): Burned {
+        if (!available(context)) return Burned.Unavailable
         val client = HealthConnectClient.getOrCreate(context)
-        if (!client.permissionController.getGrantedPermissions().containsAll(permissions)) return null
+        if (!client.permissionController.getGrantedPermissions().containsAll(permissions)) return Burned.NotGranted
 
         val zone = ZoneId.systemDefault()
         val result = client.aggregate(
@@ -47,6 +57,6 @@ object HealthConnect {
                 ),
             ),
         )
-        return result[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories
+        return Burned.Value(result[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories)
     }
 }

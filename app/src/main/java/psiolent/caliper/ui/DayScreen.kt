@@ -54,12 +54,11 @@ fun DayScreen(container: AppContainer) {
     val day by flow.collectAsStateWithLifecycle(initialValue = null)
 
     val context = LocalContext.current
-    val healthAvailable = remember { HealthConnect.available(context) }
-    var burned by remember { mutableStateOf<Double?>(null) }
+    var burned by remember { mutableStateOf<HealthConnect.Burned?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
     val permissionLauncher = rememberLauncherForActivityResult(HealthConnect.permissionContract) { refresh++ }
     LaunchedEffect(epochDay, refresh) {
-        burned = HealthConnect.burnedCalories(context, date)
+        burned = HealthConnect.burned(context, date)
     }
 
     val totals = day?.totals ?: Nutrients.EMPTY
@@ -80,7 +79,7 @@ fun DayScreen(container: AppContainer) {
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            item { DayTotals(totals, burned, healthAvailable) { permissionLauncher.launch(HealthConnect.permissions) } }
+            item { DayTotals(totals, burned) { permissionLauncher.launch(HealthConnect.permissions) } }
             if (entries.isEmpty()) {
                 item {
                     Text(
@@ -103,7 +102,7 @@ fun DayScreen(container: AppContainer) {
 }
 
 @Composable
-private fun DayTotals(totals: Nutrients, burned: Double?, healthAvailable: Boolean, onConnect: () -> Unit) {
+private fun DayTotals(totals: Nutrients, burned: HealthConnect.Burned?, onConnect: () -> Unit) {
     Column(Modifier.padding(top = 8.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
@@ -119,15 +118,18 @@ private fun DayTotals(totals: Nutrients, burned: Double?, healthAvailable: Boole
             )
         }
 
-        when {
-            burned != null -> Text(
-                "burned ${round(burned)} \u00b7 net ${round((totals[Nutrient.KCAL] ?: 0.0) - burned)} kcal",
+        when (burned) {
+            is HealthConnect.Burned.Value -> Text(
+                burned.kcal?.let {
+                    "burned ${round(it)} \u00b7 net ${round((totals[Nutrient.KCAL] ?: 0.0) - it)} kcal"
+                } ?: "No calories burned recorded for this day",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            healthAvailable -> TextButton(onClick = onConnect, contentPadding = PaddingValues(0.dp)) {
+            HealthConnect.Burned.NotGranted -> TextButton(onClick = onConnect, contentPadding = PaddingValues(0.dp)) {
                 Text("Connect Health Connect to show calories burned")
             }
+            HealthConnect.Burned.Unavailable, null -> Unit
         }
 
         Row(
@@ -211,7 +213,7 @@ private fun BandHeader(band: DayRow.Band) {
         verticalAlignment = Alignment.Bottom,
     ) {
         Text(
-            band.name,
+            "${band.name}  \u00b7  ${band.timeLabel}",
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -229,20 +231,10 @@ private fun ItemRow(entry: LogEntryEntity) {
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        Text(
-            timeFormat.format(Instant.ofEpochMilli(entry.at).atZone(ZoneId.systemDefault())),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(52.dp).padding(top = 3.dp),
-        )
         Column(Modifier.weight(1f)) {
             Text(entry.label, style = MaterialTheme.typography.bodyLarge)
-            val detail = buildString {
-                append("${round(entry.amount)} ${entry.unit} \u00b7 ${round(entry.grams)} g")
-                entry.meal?.let { append(" \u00b7 ${it.displayName.lowercase()}") }
-            }
             Text(
-                detail,
+                "${round(entry.amount)} ${entry.unit} \u00b7 ${round(entry.grams)} g",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -263,16 +255,26 @@ private fun ItemRow(entry: LogEntryEntity) {
 private fun dayRows(entries: List<LogEntryEntity>): List<DayRow> {
     val rows = mutableListOf<DayRow>()
     entries.groupBy { bandOf(it.at) }.forEach { (name, group) ->
-        rows += DayRow.Band(name, group.sumOf { it.nutrients[Nutrient.KCAL] ?: 0.0 })
+        rows += DayRow.Band(name, group.sumOf { it.nutrients[Nutrient.KCAL] ?: 0.0 }, timeRange(group))
         group.forEach { rows += DayRow.Item(it) }
     }
     return rows
 }
 
+/** The span a band covers, e.g. "13:14–13:17", or one time if they all match. */
+private fun timeRange(group: List<LogEntryEntity>): String {
+    val first = clock(group.first().at)
+    val last = clock(group.last().at)
+    return if (first == last) first else "$first\u2013$last"
+}
+
+private fun clock(epochMillis: Long): String =
+    timeFormat.format(Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()))
+
 private sealed interface DayRow {
     val key: String
 
-    data class Band(val name: String, val kcal: Double) : DayRow {
+    data class Band(val name: String, val kcal: Double, val timeLabel: String) : DayRow {
         override val key get() = "band:$name"
     }
 
