@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Photos taken with the camera are written to the cache and shared with the
+     camera app through this provider. They are never persisted. -->
+<paths>
+    <cache-path name="captures" path="captures/" />
+</paths>

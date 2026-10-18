@@ -8,11 +8,27 @@ import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+import java.io.File
 
 object Images {
 
     private const val MAX_EDGE = 1024
     private const val QUALITY = 80
+
+    /** Where a camera capture is written before it is read back and downscaled. */
+    fun newCaptureFile(context: Context): File {
+        val directory = File(context.cacheDir, "captures").apply { mkdirs() }
+        return File(directory, "meal-${System.currentTimeMillis()}.jpg")
+    }
+
+    /** Remove a capture once it has been read, so the cache does not accumulate meals. */
+    fun discardCapture(context: Context, uri: Uri) {
+        runCatching {
+            if (uri.authority == "${context.packageName}.fileprovider") {
+                File(context.cacheDir, "captures/${File(uri.path ?: "").name}").delete()
+            }
+        }
+    }
 
     /**
      * Downscale a picked image to a JPEG data URL. Photos are the most expensive

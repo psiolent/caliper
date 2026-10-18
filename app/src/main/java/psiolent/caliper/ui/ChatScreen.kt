@@ -1,5 +1,6 @@
 package psiolent.caliper.ui
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -7,13 +8,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -31,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -57,6 +66,27 @@ fun ChatScreen(container: AppContainer) {
 
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch { image = Images.toDataUrl(context, uri) }
+    }
+
+    var pendingCapture by remember { mutableStateOf<Uri?>(null) }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        val uri = pendingCapture
+        pendingCapture = null
+        if (saved && uri != null) {
+            scope.launch {
+                image = Images.toDataUrl(context, uri)
+                Images.discardCapture(context, uri)
+            }
+        }
+    }
+    val takePhoto: () -> Unit = {
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            Images.newCaptureFile(context),
+        )
+        pendingCapture = uri
+        camera.launch(uri)
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -99,9 +129,16 @@ fun ChatScreen(container: AppContainer) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            IconButton(
-                onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-            ) { Text("\uD83D\uDCF7") }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = takePhoto) {
+                    Icon(Icons.Filled.PhotoCamera, contentDescription = "Take a photo")
+                }
+                IconButton(
+                    onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                ) {
+                    Icon(Icons.Filled.PhotoLibrary, contentDescription = "Choose a photo")
+                }
+            }
             Button(
                 onClick = {
                     viewModel.send(input.trim(), image)
@@ -109,7 +146,11 @@ fun ChatScreen(container: AppContainer) {
                     image = null
                 },
                 enabled = !busy && (input.isNotBlank() || image != null),
-            ) { Text("Send") }
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Send")
+            }
         }
     }
 }
