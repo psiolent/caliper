@@ -3,6 +3,7 @@ package psiolent.caliper.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material3.NavigationBar
@@ -15,6 +16,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import psiolent.caliper.AppContainer
 
 private data class Tab(val label: String, val symbol: String)
@@ -30,17 +32,25 @@ private val tabs = listOf(
 @Composable
 fun CaliperRoot(container: AppContainer) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
+
+    // While the keyboard is up the nav bar is covered anyway; hiding it also stops
+    // its height being reserved *under* the keyboard, which left a dead gap above
+    // the chat's input row.
+    val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
-            NavigationBar {
-                tabs.forEachIndexed { index, tab ->
-                    NavigationBarItem(
-                        selected = selected == index,
-                        onClick = { selected = index },
-                        icon = { Text(tab.symbol) },
-                        label = { Text(tab.label) },
-                    )
+            if (!keyboardVisible) {
+                NavigationBar {
+                    tabs.forEachIndexed { index, tab ->
+                        NavigationBarItem(
+                            selected = selected == index,
+                            onClick = { selected = index },
+                            icon = { Text(tab.symbol) },
+                            label = { Text(tab.label) },
+                        )
+                    }
                 }
             }
         },
