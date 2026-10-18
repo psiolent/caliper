@@ -47,14 +47,16 @@ The app has no rule about what makes a meal. The agent is instructed that everyt
 eaten in one session is one meal unless the user says otherwise, and it names each one.
 
 ### `log_entries` — `LogEntryEntity`
-A single item eaten.
+A single item eaten. It has no time of its own.
 - `id`, `mealId` — the meal it belongs to
 - `targetType: FOOD|BATCH`, `targetId`
 - `label` — the target's name at log time, so history renders without a join
 - `amount`, `unit`, `grams` — the resolved weight
 - `nutrients: Nutrients` — **snapshotted** at log time, so corrections to a food
   do not rewrite history
-- `at` — epoch millis; defaults to the meal's time when not given
+
+Items come back in the order they were logged. If that ever proves unstable, add an
+explicit position then rather than a column that means nothing now.
 
 ### `profile` — `ProfileEntity`
 A single row (`id = 1`) holding one short document: goals, targets, allergies,
@@ -66,6 +68,9 @@ the user to read back; the agent never reads these.
 
 ## Notes
 
+- Schema version is 3. Migrations live in `CaliperDatabase`; two of them rebuilt
+  `log_entries` as the meal model settled, and the data was wiped alongside both by
+  agreement with the user.
 - An absent nutrient in a panel means *unknown*, not zero.
 - `Nutrients` is a map over a closed `Nutrient` enum. Adding a nutrient is an enum
   value plus, if needed, a converter — no schema migration.
