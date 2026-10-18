@@ -35,12 +35,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import psiolent.caliper.AppContainer
 import psiolent.caliper.data.LogEntryEntity
 import psiolent.caliper.data.MealEntity
 import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
 import psiolent.caliper.integrations.HealthConnect
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -66,8 +68,13 @@ fun DayScreen(container: AppContainer) {
     var burned by remember { mutableStateOf<HealthConnect.Burned?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
     val permissionLauncher = rememberLauncherForActivityResult(HealthConnect.permissionContract) { refresh++ }
+    // Calories burned move through the day, so read them again while this screen is
+    // open rather than once. Leaving the screen cancels the loop with the effect.
     LaunchedEffect(epochDay, refresh) {
-        burned = HealthConnect.burned(context, date)
+        while (true) {
+            burned = HealthConnect.burned(context, date)
+            delay(60_000)
+        }
     }
 
     // What the breakdown sheet is open for, if anything: the day's totals, or one item.
@@ -200,14 +207,7 @@ private fun DayTotals(
 
         when (burned) {
             is HealthConnect.Burned.Value -> Text(
-                when {
-                    burned.totalKcal != null && burned.activeKcal != null ->
-                        "burned ${round(burned.totalKcal)} kcal total \u00b7 ${round(burned.activeKcal)} active"
-                    burned.totalKcal != null -> "burned ${round(burned.totalKcal)} kcal total"
-                    burned.activeKcal != null ->
-                        "burned ${round(burned.activeKcal)} kcal active (resting burn not recorded)"
-                    else -> "No calories burned recorded for this day"
-                },
+                burnedLine(burned),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -318,6 +318,29 @@ private fun portion(entry: LogEntryEntity): String =
     } else {
         "${round(entry.amount)} \u00d7 ${entry.unit} \u00b7 ${round(entry.grams)} g"
     }
+
+/**
+ * The burned line: what was burned, and — once the reading is old enough to explain a
+ * number that is not moving — when it is from. Health Connect aggregates over the whole
+ * day, so the figure holds still for as long as the source stays quiet, and a source can
+ * stay quiet for hours without anything being wrong.
+ */
+private fun burnedLine(burned: HealthConnect.Burned.Value): String {
+    val line = when {
+        burned.totalKcal != null && burned.activeKcal != null ->
+            "burned ${round(burned.totalKcal)} kcal total \u00b7 ${round(burned.activeKcal)} active"
+        burned.totalKcal != null -> "burned ${round(burned.totalKcal)} kcal total"
+        burned.activeKcal != null ->
+            "burned ${round(burned.activeKcal)} kcal active (resting burn not recorded)"
+        else -> return "No calories burned recorded for this day"
+    }
+    val recorded = burned.recordedAt ?: return line
+    if (Duration.between(recorded, Instant.now()) < STALE_AFTER) return line
+    return "$line \u00b7 as of " + timeFormat.format(recorded.atZone(ZoneId.systemDefault()))
+}
+
+/** A recording source quieter than this is worth saying out loud. */
+private val STALE_AFTER: Duration = Duration.ofMinutes(30)
 
 private val dayFormat = DateTimeFormatter.ofPattern("EEE d MMM")
 private val timeFormat: DateTimeFormatter = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
