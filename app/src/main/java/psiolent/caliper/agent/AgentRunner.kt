@@ -29,7 +29,12 @@ class AgentRunner(
         return id
     }
 
-    suspend fun send(sessionId: String, userText: String, imageDataUrl: String? = null): String {
+    suspend fun send(
+        sessionId: String,
+        userText: String,
+        imageDataUrl: String? = null,
+        onProgress: (String) -> Unit = {},
+    ): String {
         val apiKey = settings.openRouterApiKey
         if (apiKey.isBlank()) {
             return reply(sessionId, "Add your OpenRouter API key in Settings, then try again.", 0.0)
@@ -56,6 +61,7 @@ class AgentRunner(
                 textMessage("user", userText)
             }
 
+            onProgress("Thinking\u2026")
             var replyText: String? = null
             var steps = 0
             while (replyText == null && steps < MAX_STEPS) {
@@ -73,6 +79,7 @@ class AgentRunner(
                     replyText = message.content?.takeIf { it.isNotBlank() } ?: "(no reply)"
                     break
                 }
+                onProgress("Working\u2026 " + calls.joinToString(", ") { it.function.name })
                 messages += assistantToolCallMessage(message)
                 calls.forEach { call ->
                     messages += toolResultMessage(call.id, executor.execute(call.function.name, call.function.arguments))
@@ -81,7 +88,8 @@ class AgentRunner(
 
             reply(
                 sessionId,
-                replyText ?: "I stopped after $MAX_STEPS steps without finishing. Try rephrasing.",
+                replyText ?: "I ran out of room to finish that one, but what I logged is saved. " +
+                    "Ask me to continue and I'll pick up where I left off.",
                 cost,
             )
         } catch (e: Exception) {
@@ -123,6 +131,6 @@ class AgentRunner(
     }
 
     private companion object {
-        const val MAX_STEPS = 8
+        const val MAX_STEPS = 20
     }
 }

@@ -51,6 +51,7 @@ fun ChatScreen(container: AppContainer) {
     )
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
+    val status by viewModel.status.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -74,7 +75,7 @@ fun ChatScreen(container: AppContainer) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(messages, key = { it.id }) { message -> MessageBubble(message) }
-            if (busy) item { Text("Thinking\u2026", style = MaterialTheme.typography.bodySmall) }
+            if (busy) item { Text(status ?: "Thinking\u2026", style = MaterialTheme.typography.bodySmall) }
         }
 
         if (image != null) {

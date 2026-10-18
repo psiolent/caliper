@@ -1,5 +1,6 @@
 package psiolent.caliper.agent
 
+import android.util.Log
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -233,8 +234,14 @@ class ToolExecutor(
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    private companion object {
+        const val TAG = "Caliper"
+        val NUMBER = Regex("""-?\d+(\.\d+)?""")
+    }
+
     suspend fun execute(name: String, arguments: String): String = try {
         val args = args(arguments)
+        Log.d(TAG, "tool $name $arguments")
         when (name) {
             "find_food" -> findFood(args)
             "recent_batches" -> recentBatches()
@@ -287,9 +294,14 @@ class ToolExecutor(
         val existing = args.string("food_id")?.let { repo.food(it) }
         val fdcId = args.number("fdc_id")?.toInt()
         val fromUsda = if (fdcId == null) null else usda.byId(fdcId) ?: return "Error: no USDA food with id $fdcId"
-        val panel = fromUsda?.per100g
-            ?: (args["per_100g"] as? JsonObject)?.let(::buildNutrients)
+        val provided = args["per_100g"] as? JsonObject
+        val panel = fromUsda?.per100g ?: provided?.let(::buildNutrients)
             ?: return "Error: provide per_100g, or an fdc_id to copy the panel from USDA"
+        if (panel.amounts.isEmpty()) {
+            val keys = provided?.keys?.joinToString(", ").orEmpty()
+            return "Error: no recognised nutrient keys in per_100g (got: $keys). " +
+                "Use keys like kcal, protein, fat, saturated_fat, carbs, fiber, sugars, sodium, cholesterol."
+        }
 
         val food = FoodEntity(
             id = existing?.id ?: UUID.randomUUID().toString(),
@@ -417,10 +429,16 @@ class ToolExecutor(
     private fun buildNutrients(panel: JsonObject): Nutrients = Nutrients(
         panel.entries.mapNotNull { (key, value) ->
             val nutrient = nutrientByKey(key) ?: return@mapNotNull null
-            val amount = (value as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return@mapNotNull null
+            val amount = (value as? JsonPrimitive)?.toAmount() ?: return@mapNotNull null
             nutrient to amount
         }.toMap(),
     )
+
+    /** Accept a plain number, or a string like "144 kcal" or "15 g". */
+    private fun JsonPrimitive.toAmount(): Double? {
+        val raw = content.trim()
+        return raw.toDoubleOrNull() ?: NUMBER.find(raw)?.value?.toDoubleOrNull()
+    }
 
     // --- display helpers ---------------------------------------------------
 

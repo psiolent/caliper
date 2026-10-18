@@ -30,6 +30,9 @@ class ChatViewModel(
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
 
+    private val _status = MutableStateFlow<String?>(null)
+    val status: StateFlow<String?> = _status.asStateFlow()
+
     init {
         viewModelScope.launch { session.value = agent.newSession() }
     }
@@ -39,10 +42,12 @@ class ChatViewModel(
         if (text.isBlank() && imageDataUrl == null) return
         viewModelScope.launch {
             _busy.value = true
+            _status.value = "Thinking\u2026"
             try {
-                agent.send(id, text.ifBlank { "What is this?" }, imageDataUrl)
+                agent.send(id, text.ifBlank { "What is this?" }, imageDataUrl) { _status.value = it }
             } finally {
                 _busy.value = false
+                _status.value = null
             }
         }
     }

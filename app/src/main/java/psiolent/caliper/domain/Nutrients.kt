@@ -61,11 +61,46 @@ data class Nutrients(val amounts: Map<Nutrient, Double> = emptyMap()) {
     }
 }
 
-/** Resolve a nutrient from a model-supplied key (enum name, or a loose variant of it). */
-fun nutrientByKey(key: String): Nutrient? {
-    val normalized = key.trim().lowercase().replace("_", "").replace(" ", "")
-    return Nutrient.entries.firstOrNull { it.name.lowercase().replace("_", "") == normalized }
+/** Reduce a nutrient key to a comparable form: letters only, trailing unit stripped. */
+private fun nutrientKeyForm(raw: String): String =
+    raw.lowercase()
+        .filter(Char::isLetter)
+        .removeSuffix("grams")
+        .removeSuffix("gram")
+        .removeSuffix("mg")
+        .removeSuffix("g")
+
+private val NUTRIENT_ALIASES: Map<String, Nutrient> = buildMap {
+    Nutrient.entries.forEach { put(nutrientKeyForm(it.name), it) }
+    listOf(
+        "calories" to Nutrient.KCAL,
+        "energy" to Nutrient.KCAL,
+        "kilocalories" to Nutrient.KCAL,
+        "totalfat" to Nutrient.FAT,
+        "saturatedfattyacids" to Nutrient.SATURATED_FAT,
+        "saturated" to Nutrient.SATURATED_FAT,
+        "transfattyacids" to Nutrient.TRANS_FAT,
+        "trans" to Nutrient.TRANS_FAT,
+        "monounsaturatedfattyacids" to Nutrient.MONOUNSATURATED_FAT,
+        "mono" to Nutrient.MONOUNSATURATED_FAT,
+        "polyunsaturatedfattyacids" to Nutrient.POLYUNSATURATED_FAT,
+        "poly" to Nutrient.POLYUNSATURATED_FAT,
+        "carbohydrate" to Nutrient.CARBS,
+        "carbohydrates" to Nutrient.CARBS,
+        "totalcarbohydrate" to Nutrient.CARBS,
+        "totalcarbohydrates" to Nutrient.CARBS,
+        "dietaryfiber" to Nutrient.FIBER,
+        "fibre" to Nutrient.FIBER,
+        "totalfiber" to Nutrient.FIBER,
+        "sugar" to Nutrient.SUGARS,
+        "totalsugars" to Nutrient.SUGARS,
+        "na" to Nutrient.SODIUM,
+        "chol" to Nutrient.CHOLESTEROL,
+    ).forEach { (alias, nutrient) -> put(nutrientKeyForm(alias), nutrient) }
 }
+
+/** Resolve a nutrient from a model-supplied key: an enum name, or a common label variant. */
+fun nutrientByKey(key: String): Nutrient? = NUTRIENT_ALIASES[nutrientKeyForm(key)]
 
 /** Optional label for a log entry. Absent means "unlabelled", which is normal. */
 @Serializable
