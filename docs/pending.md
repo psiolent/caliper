@@ -5,27 +5,15 @@ and ask the user which to take — they sequence this themselves.
 
 Ordered roughly as the user listed them, not by priority.
 
-## 1. Day view: the lower half has no grouping
-
-The primary (calories) and secondary (protein/fat/carbs cards) sections work. Below
-them, the fat breakdown, carb breakdown and the sodium/cholesterol line read as one
-undifferentiated block: same weight, no visual cue about what belongs together or how
-the pieces relate. The user's words: "chaotic and disordered… we need some visual cues
-telling us what information belongs together and what the relationship is between
-pieces of information."
-
-Meals are better than they were — a rule separates a meal's heading from its items —
-but there is still little distinguishing one meal from the next as a whole.
-
-`ui/DayScreen.kt`. A design conversation is expected here, not a patch.
-
-## 2. Tapping an item should show its full nutrition
+## 1. Tapping an item should show its full nutrition
 
 Tapping an item in the day view should show all the detail held for it (the whole
 snapshot panel, the food's source and servings, whether values are estimated). Today
 the row shows only the label, amount and calories.
 
-## 3. Library: no visual distinction, no search, and untested recipes/batches
+`ui/DayScreen.kt`.
+
+## 2. Library: no visual distinction, no search, and untested recipes/batches
 
 Rows are undifferentiated and the list will grow without bound. Wants search, and
 probably tabs for Foods / Recipes / Batches. Separately: **recipes and batches have
@@ -34,7 +22,7 @@ whole path is unverified.
 
 `ui/LibraryScreen.kt`.
 
-## 4. History: group by day, and summarise each session
+## 3. History: group by day, and summarise each session
 
 Group sessions under "Today", "Yesterday", "Saturday", "Last week". Each entry should
 carry a short summary of what the session contained.
@@ -46,14 +34,14 @@ before building.
 
 `ui/HistoryScreen.kt`, `data` (sessions and messages).
 
-## 5. Settings: the model list needs containing
+## 4. Settings: the model list needs containing
 
 "Load current model list" dumps roughly 400 rows into the settings page. It needs its
 own scrollable, searchable view rather than being inlined.
 
 `ui/SettingsScreen.kt`.
 
-## 6. A turn and leaving the screen (tested; one design question left)
+## 5. A turn and leaving the screen (tested; one design question left)
 
 Tested on the phone, so this part is answered:
 
