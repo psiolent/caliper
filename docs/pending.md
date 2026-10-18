@@ -5,29 +5,29 @@ and ask the user which to take — they sequence this themselves.
 
 Ordered roughly as the user listed them, not by priority.
 
-## 1. A turn and leaving the screen (tested; one design question left)
+## 1. A turn and leaving the screen (tested; decided to live with it)
 
 Tested on the phone, so this part is answered:
 
 - **Switching tabs** while a turn runs: the turn continues and the reply arrives. The
   chat view model belongs to the Activity, not the tab.
 - **Home / backgrounding**: the turn continues too.
-- **Back out of the app** (or swipe it away): the Activity is destroyed, the turn is
-  cancelled, and only the user's message remains.
+- **Back out of the app**: the Activity is destroyed, the turn is cancelled, and only the
+  user's message remains. Swiping it from recents should behave the same way (same
+  mechanism) but has not been tried.
 
 Fixed along the way: a cancelled turn used to write "I couldn't reach the model: Job
 was cancelled" into the transcript — a lie, since nothing was wrong with the model. A
 cancellation is now left to propagate instead of being reported as a failure.
 
-Open design question: **should a turn outlive the app?** It cannot today without an
-application-scoped worker, and surviving doze needs a foreground service. Note that it
-would only be *useful* together with resuming the last session, because the app starts
-a fresh session on every launch — a reply that landed after you left would sit in a
-session you are no longer looking at. Worth deciding as one question, not two.
+**Decided: live with it.** Making a turn outlive the app would need an application-scoped
+worker and a foreground service to survive doze, and it is only useful together with
+resuming the last session, since the app starts a fresh one on every launch. The user
+would rather use the app as it is and find out whether it bites. Revisit only if it does.
 
-Related: a turn that ran while the screen was off failed once with "Unable to resolve
-host openrouter.ai" — the phone suspends the network in low-power states. Another
-argument for a foreground service if long turns matter.
+The risk while backgrounded is not the turn being cancelled but the system: the app can be
+killed for memory, and the phone suspends the network in low-power states — a turn that ran
+with the screen off failed once with "Unable to resolve host openrouter.ai".
 
 ## Known friction, deliberately left alone
 
