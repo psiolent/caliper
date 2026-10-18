@@ -77,13 +77,7 @@ Related: a turn that ran while the screen was off failed once with "Unable to re
 host openrouter.ai" — the phone suspends the network in low-power states. Another
 argument for a foreground service if long turns matter.
 
-## 7. The chat does not scroll to a new message
-
-When a reply lands below the fold, the list does not follow it.
-
-`ui/ChatScreen.kt`.
-
-## 8. Sent photos are not shown in the chat
+## 7. Sent photos are not shown in the chat
 
 The user's message shows only its text, so there is no sign a photo was sent. Note
 that photos are deliberately never persisted — they exist only for the turn that reads

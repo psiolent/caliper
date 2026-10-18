@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -38,6 +39,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -118,7 +120,19 @@ fun ChatScreen(container: AppContainer) {
             }
         }
 
+        val listState = rememberLazyListState()
+        val entries = messages.size + if (busy) 1 else 0
+
+        // Follow the conversation: open at the newest entry, and stay there as the
+        // reply lands. Keyed on `busy` as well as the count, because the reply replaces
+        // the "working" note in place — the count alone does not change, but a taller
+        // reply would otherwise be left hanging below the fold.
+        LaunchedEffect(messages.size, busy) {
+            if (entries > 0) listState.animateScrollToItem(entries - 1)
+        }
+
         LazyColumn(
+            state = listState,
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
