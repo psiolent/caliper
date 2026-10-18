@@ -1,5 +1,6 @@
 package psiolent.caliper.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,6 +33,11 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun HistoryScreen(container: AppContainer) {
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // Back from a transcript returns to the session list, before the tab-level
+    // handler can take it.
+    BackHandler(enabled = selectedId != null) { selectedId = null }
+
     val id = selectedId
     if (id == null) {
         SessionList(container) { selectedId = it }

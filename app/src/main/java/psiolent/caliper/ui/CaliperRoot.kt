@@ -1,5 +1,6 @@
 package psiolent.caliper.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,6 +41,11 @@ private val tabs = listOf(
 @Composable
 fun CaliperRoot(container: AppContainer) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
+
+    // Back returns to the chat from any other tab rather than leaving the app.
+    // A screen with its own back step (History's transcript) registers its own
+    // handler and takes precedence.
+    BackHandler(enabled = selected != 0) { selected = 0 }
 
     // While the keyboard is up the nav bar is covered anyway; hiding it also stops
     // its height being reserved *under* the keyboard, which left a dead gap above
