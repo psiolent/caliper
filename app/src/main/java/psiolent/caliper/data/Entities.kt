@@ -86,7 +86,7 @@ data class MealEntity(
     val at: Long,
 )
 
-/** A meal with the items eaten for it. */
+/** A meal with the items eaten for it, in the order they were logged. */
 data class MealWithEntries(
     @Embedded val meal: MealEntity,
     @Relation(parentColumn = "id", entityColumn = "mealId")
@@ -94,8 +94,8 @@ data class MealWithEntries(
 )
 
 /**
- * Something eaten. The nutrient panel is snapshotted at log time so history is
- * stable even if the underlying food or batch is later corrected.
+ * A single item eaten. It has no time of its own: it belongs to a meal, and the meal
+ * carries when that happened.
  */
 @Serializable
 @Entity(tableName = "log_entries")
@@ -111,7 +111,6 @@ data class LogEntryEntity(
     val unit: String,
     val grams: Double,
     val nutrients: Nutrients,
-    val at: Long,
 )
 
 /** The single always-present document describing the user. */

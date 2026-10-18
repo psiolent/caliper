@@ -19,7 +19,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SessionEntity::class,
         MessageEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -59,9 +59,26 @@ abstract class CaliperDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * An item stopped carrying its own time: it belongs to a meal, and the meal
+         * says when. Rebuild the table without it; entries are re-logged rather than
+         * guessed at.
+         */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS `log_entries`")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `log_entries` (`id` TEXT NOT NULL, `mealId` TEXT NOT NULL, " +
+                        "`targetType` TEXT NOT NULL, `targetId` TEXT NOT NULL, `label` TEXT NOT NULL, " +
+                        "`amount` REAL NOT NULL, `unit` TEXT NOT NULL, `grams` REAL NOT NULL, " +
+                        "`nutrients` TEXT NOT NULL, PRIMARY KEY(`id`))",
+                )
+            }
+        }
+
         fun open(context: Context): CaliperDatabase =
             Room.databaseBuilder(context.applicationContext, CaliperDatabase::class.java, "caliper.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
     }
 }

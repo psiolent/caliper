@@ -104,12 +104,6 @@ interface MealDao {
 
 @Dao
 interface LogDao {
-    @Query("SELECT * FROM log_entries WHERE at >= :from AND at < :to ORDER BY at")
-    fun observeBetween(from: Long, to: Long): Flow<List<LogEntryEntity>>
-
-    @Query("SELECT * FROM log_entries WHERE at >= :from AND at < :to ORDER BY at")
-    suspend fun between(from: Long, to: Long): List<LogEntryEntity>
-
     @Query("SELECT * FROM log_entries")
     suspend fun all(): List<LogEntryEntity>
 

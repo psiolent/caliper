@@ -38,13 +38,12 @@ class CaliperRepository(private val db: CaliperDatabase) {
 
     fun observeDay(date: LocalDate): Flow<DayView> =
         meals.observeBetween(startOfDay(date), startOfDay(date.plusDays(1))).map { groups ->
-            val ordered = groups.ordered()
-            DayView(date, ordered, ordered.flatMap { it.entries }.sumOfNutrients())
+            DayView(date, groups, groups.flatMap { it.entries }.sumOfNutrients())
         }
 
     suspend fun day(date: LocalDate): DayView {
-        val ordered = meals.between(startOfDay(date), startOfDay(date.plusDays(1))).ordered()
-        return DayView(date, ordered, ordered.flatMap { it.entries }.sumOfNutrients())
+        val groups = meals.between(startOfDay(date), startOfDay(date.plusDays(1)))
+        return DayView(date, groups, groups.flatMap { it.entries }.sumOfNutrients())
     }
 
     suspend fun searchFoods(query: String): List<FoodEntity> = foods.search(query)
@@ -110,8 +109,6 @@ class CaliperRepository(private val db: CaliperDatabase) {
             unit = unit,
             grams = grams,
             nutrients = per100g.forGrams(grams),
-            // An item has no time of its own; it belongs to when the meal happened.
-            at = meal.at,
         )
         logs.upsert(entry)
         return entry
@@ -281,7 +278,3 @@ class CaliperRepository(private val db: CaliperDatabase) {
 
 private fun List<LogEntryEntity>.sumOfNutrients(): Nutrients =
     fold(Nutrients.EMPTY) { total, entry -> total + entry.nutrients }
-
-/** Room returns relation rows in no particular order; a meal's items run in time. */
-private fun List<MealWithEntries>.ordered(): List<MealWithEntries> =
-    map { group -> group.copy(entries = group.entries.sortedBy { it.at }) }
