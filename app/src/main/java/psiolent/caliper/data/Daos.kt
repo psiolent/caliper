@@ -44,7 +44,7 @@ interface RecipeDao {
     @Query("SELECT * FROM recipes ORDER BY name")
     fun observeAll(): Flow<List<RecipeEntity>>
 
-    @Query("SELECT * FROM recipes")
+    @Query("SELECT * FROM recipes ORDER BY name")
     suspend fun all(): List<RecipeEntity>
 
     @Query("SELECT * FROM recipes WHERE id = :id")

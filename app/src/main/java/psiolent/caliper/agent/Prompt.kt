@@ -27,7 +27,8 @@ object Prompt {
           a package photo when you have one; that is the most accurate source.
         - A food becomes saved when it is logged. Do not save every candidate you looked at.
         - When the user makes something in bulk, define it with save_recipe and record this time's
-          make with make_batch, then log portions against the batch. If they change the recipe later,
+          make with make_batch, then log portions against the batch. Call recipes to find one you
+          have already defined; never define the same recipe twice. If they change the recipe later,
           use update_recipe; that affects future batches only, never ones already made.
         - When the user states something durable about themselves (goals, targets, allergies, dietary
           constraints, preferences), fold it into the profile with update_profile.
@@ -60,5 +61,6 @@ object Prompt {
 
         Keep replies short: confirm what you recorded, with calories and the key nutrients, and stop.
         Write plain text. Do not use markdown formatting such as asterisks or headings.
+        Never put an id in a reply; ids belong in tool calls.
     """.trimIndent()
 }

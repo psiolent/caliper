@@ -15,6 +15,7 @@ import psiolent.caliper.data.FoodEntity
 import psiolent.caliper.data.FoodSource
 import psiolent.caliper.data.Ingredient
 import psiolent.caliper.data.LogEntryEntity
+import psiolent.caliper.data.RecipeEntity
 import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
 import psiolent.caliper.domain.Serving
@@ -37,7 +38,7 @@ import java.util.UUID
 object ToolSchema {
 
     fun all(): List<JsonObject> = listOf(
-        findFood, recentBatches, getLog, saveFood, startMeal, logIntake, saveRecipe, updateRecipe, makeBatch, reviseEntry, updateProfile, updateMeal, deleteMeal,
+        findFood, recentBatches, recipes, getLog, saveFood, startMeal, logIntake, saveRecipe, updateRecipe, makeBatch, reviseEntry, updateProfile, updateMeal, deleteMeal,
     )
 
     private val nutrientKeys = Nutrient.entries.joinToString(", ") { it.name.lowercase() }
@@ -54,6 +55,14 @@ object ToolSchema {
         name = "recent_batches",
         description = "List batches you have made recently, newest first. Use this to resolve references " +
             "like 'those overnight oats', then log against the returned id.",
+        properties = obj(),
+    )
+
+    private val recipes = function(
+        name = "recipes",
+        description = "List the recipes you have defined, by name, with the ids needed to make a batch " +
+            "of one or to change it. Recipes are not otherwise readable, so use this rather than " +
+            "defining one again.",
         properties = obj(),
     )
 
@@ -277,6 +286,9 @@ class ToolExecutor(
 
     private companion object {
         val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+        /** Enough to choose from without drowning the turn in a long library. */
+        const val MAX_RECIPES = 10
         const val WHEN_MESSAGE =
             "'at' must be a time of day like 07:00, or a date and time like 2026-10-18T07:00. " +
                 "A bare date has no time of day — omit 'at' to use the current time."
@@ -295,6 +307,7 @@ class ToolExecutor(
         val result = when (name) {
             "find_food" -> findFood(args)
             "recent_batches" -> recentBatches()
+            "recipes" -> listRecipes()
             "get_log" -> getLog(args)
             "save_food" -> saveFood(args)
             "start_meal" -> startMeal(args)
@@ -334,6 +347,42 @@ class ToolExecutor(
         if (batches.isEmpty()) return "No batches yet."
         val remaining = batches.map { it to repo.remainingGrams(it.id) }
         return remaining.joinToString("\n") { (batch, left) -> describeBatch(batch, left) }
+    }
+
+    /** Recipes by name, with the ids needed to make or change one. */
+    private suspend fun listRecipes(): String {
+        val recipes = repo.allRecipes()
+        if (recipes.isEmpty()) return "No recipes yet."
+        val shown = recipes.take(MAX_RECIPES)
+        val lines = shown.map { describeRecipe(it) }.joinToString("\n")
+        return if (recipes.size > shown.size) {
+            "$lines\n(${recipes.size - shown.size} more not shown.)"
+        } else {
+            lines
+        }
+    }
+
+    private suspend fun describeRecipe(recipe: RecipeEntity): String {
+        val ingredients = recipe.ingredients
+            .map { ingredient ->
+                val name = repo.food(ingredient.foodId)?.name ?: ingredient.foodId
+                "${ingredient.amount.toInt()} ${ingredient.unit} $name"
+            }
+            .joinToString(", ")
+        return "- id=${recipe.id} name=\"${recipe.name}\" makes=${recipe.yieldGrams.toInt()} g " +
+            "ingredients=[$ingredients]"
+    }
+
+    /**
+     * A wrong recipe id is worth more than a refusal. There are few recipes and no other
+     * way to list them, so say which exist. Without that the only recovery is to define
+     * the recipe again, which leaves a duplicate behind.
+     */
+    private suspend fun unknownRecipe(id: String): String {
+        val known = repo.allRecipes()
+        if (known.isEmpty()) return "Error: no recipe with id $id, and none has been saved yet."
+        return "Error: no recipe with id $id. Saved recipes: " +
+            known.joinToString("; ") { "${it.name} (id=${it.id})" }
     }
 
     private suspend fun getLog(args: JsonObject): String {
@@ -404,7 +453,8 @@ class ToolExecutor(
         val entry = when {
             repo.food(targetId) != null -> repo.logFood(targetId, amount, unit, mealId)
             repo.batch(targetId) != null -> repo.logBatch(targetId, amount, unit, mealId)
-            else -> return "Error: no food or batch with id $targetId"
+            else -> return "Error: no food or batch with id $targetId. " +
+                "Use find_food to get a food's id, or recent_batches for a batch you made."
         }
         val mealLabel = repo.meal(mealId)?.label.orEmpty()
         return "Logged to \"$mealLabel\". entry_id=${entry.id} ${describeEntry(entry)}"
@@ -429,6 +479,7 @@ class ToolExecutor(
 
     private suspend fun updateRecipe(args: JsonObject): String {
         val id = args.string("recipe_id") ?: return "Error: recipe_id is required"
+        if (repo.recipe(id) == null) return unknownRecipe(id)
         val ingredients = if (args.containsKey("ingredients")) args.ingredients() ?: return INGREDIENTS_ERROR else null
         val servings = if (args.containsKey("servings")) args.servings() ?: return SERVINGS_ERROR else null
         val recipe = repo.updateRecipe(
@@ -443,8 +494,9 @@ class ToolExecutor(
 
     private suspend fun makeBatch(args: JsonObject): String {
         val recipeId = args.string("recipe_id") ?: return "Error: recipe_id is required"
+        val recipe = repo.recipe(recipeId) ?: return unknownRecipe(recipeId)
         val at = whenArg(args.string("at")) ?: Instant.now()
-        val batch = repo.makeBatch(recipeId, args.string("name"), at)
+        val batch = repo.makeBatch(recipe.id, args.string("name"), at)
         return "Made batch id=${batch.id} name=\"${batch.name}\" total=${batch.totalGrams.toInt()} g."
     }
 

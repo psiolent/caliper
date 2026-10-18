@@ -57,6 +57,11 @@ class CaliperRepository(private val db: CaliperDatabase) {
     fun observeRecipes(): Flow<List<RecipeEntity>> = recipes.observeAll()
     fun observeBatches(): Flow<List<BatchEntity>> = batches.observeAll()
 
+    suspend fun recipe(id: String): RecipeEntity? = recipes.byId(id)
+
+    /** Recipes by name, for finding one to make a batch of or to change. */
+    suspend fun allRecipes(): List<RecipeEntity> = recipes.all()
+
     /** What is left of a batch, derived from what has been logged against it. */
     suspend fun remainingGrams(batchId: String): Double? {
         val batch = batches.byId(batchId) ?: return null
