@@ -5,15 +5,7 @@ and ask the user which to take — they sequence this themselves.
 
 Ordered roughly as the user listed them, not by priority.
 
-## 1. Tapping an item should show its full nutrition
-
-Tapping an item in the day view should show all the detail held for it (the whole
-snapshot panel, the food's source and servings, whether values are estimated). Today
-the row shows only the label, amount and calories.
-
-`ui/DayScreen.kt`.
-
-## 2. Library: no visual distinction, no search, and untested recipes/batches
+## 1. Library: no visual distinction, no search, and untested recipes/batches
 
 Rows are undifferentiated and the list will grow without bound. Wants search, and
 probably tabs for Foods / Recipes / Batches. Separately: **recipes and batches have
@@ -22,7 +14,7 @@ whole path is unverified.
 
 `ui/LibraryScreen.kt`.
 
-## 3. History: group by day, and summarise each session
+## 2. History: group by day, and summarise each session
 
 Group sessions under "Today", "Yesterday", "Saturday", "Last week". Each entry should
 carry a short summary of what the session contained.
@@ -34,14 +26,14 @@ before building.
 
 `ui/HistoryScreen.kt`, `data` (sessions and messages).
 
-## 4. Settings: the model list needs containing
+## 3. Settings: the model list needs containing
 
 "Load current model list" dumps roughly 400 rows into the settings page. It needs its
 own scrollable, searchable view rather than being inlined.
 
 `ui/SettingsScreen.kt`.
 
-## 5. A turn and leaving the screen (tested; one design question left)
+## 4. A turn and leaving the screen (tested; one design question left)
 
 Tested on the phone, so this part is answered:
 

@@ -2,6 +2,7 @@ package psiolent.caliper.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,7 +13,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,6 +50,10 @@ import java.time.format.FormatStyle
 /**
  * The day: what it adds up to, then each meal — named and marked with its own time —
  * and the items eaten for it.
+ *
+ * The totals stay short on purpose: the day's own breakdown is one tap away, and the
+ * same sheet opens for a single item, so a panel reads the same wherever it is looked
+ * at.
  */
 @Composable
 fun DayScreen(container: AppContainer) {
@@ -61,6 +69,9 @@ fun DayScreen(container: AppContainer) {
     LaunchedEffect(epochDay, refresh) {
         burned = HealthConnect.burned(context, date)
     }
+
+    // What the breakdown sheet is open for, if anything: the day's totals, or one item.
+    var breakdown by remember { mutableStateOf<BreakdownRequest?>(null) }
 
     val totals = day?.totals ?: Nutrients.EMPTY
     // A meal can exist before anything is logged to it; an empty one is not worth showing.
@@ -81,7 +92,19 @@ fun DayScreen(container: AppContainer) {
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            item { DayTotals(totals, burned) { permissionLauncher.launch(HealthConnect.permissions) } }
+            item {
+                DayTotals(
+                    totals = totals,
+                    burned = burned,
+                    onConnect = { permissionLauncher.launch(HealthConnect.permissions) },
+                    onFullBreakdown = {
+                        breakdown = BreakdownRequest(
+                            title = if (date == LocalDate.now()) "Today" else date.format(dayFormat),
+                            panel = totals,
+                        )
+                    },
+                )
+            }
 
             if (meals.isEmpty()) {
                 item {
@@ -101,11 +124,17 @@ fun DayScreen(container: AppContainer) {
                             first = index == 0,
                         )
                     }
-                    items(group.entries, key = { it.id }) { entry -> ItemRow(entry) }
+                    items(group.entries, key = { it.id }) { entry ->
+                        ItemRow(entry) {
+                            breakdown = BreakdownRequest(entry.label, entry.nutrients, portion(entry))
+                        }
+                    }
                 }
             }
         }
     }
+
+    breakdown?.let { request -> BreakdownSheet(request) { breakdown = null } }
 }
 
 @Composable
@@ -145,15 +174,20 @@ private fun MealHeader(meal: MealEntity, kcal: Double, first: Boolean) {
 }
 
 @Composable
-private fun DayTotals(totals: Nutrients, burned: HealthConnect.Burned?, onConnect: () -> Unit) {
+private fun DayTotals(
+    totals: Nutrients,
+    burned: HealthConnect.Burned?,
+    onConnect: () -> Unit,
+    onFullBreakdown: () -> Unit,
+) {
     Column(Modifier.padding(top = 8.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 round(totals[Nutrient.KCAL] ?: 0.0),
                 style = MaterialTheme.typography.displayMedium,
                 fontWeight = FontWeight.Bold,
-                // The one number the screen is about: the only place the accent is used,
-                // so it keeps meaning "this is the figure that matters".
+                // The one number the screen is about: the accent marks it, and the two
+                // watched nutrients below, so colour here means "this matters".
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
@@ -192,139 +226,38 @@ private fun DayTotals(totals: Nutrients, burned: HealthConnect.Burned?, onConnec
             MacroCard("carbs", totals[Nutrient.CARBS])
         }
 
-        DetailCard(totals)
-    }
-}
+        // The two worth watching day to day: how much saturated fat, how much fiber.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            MacroCard("saturated fat", totals[Nutrient.SATURATED_FAT], accent = true)
+            MacroCard("fiber", totals[Nutrient.FIBER], accent = true)
+        }
 
-private val FAT_PARTS = listOf(
-    Nutrient.SATURATED_FAT,
-    Nutrient.TRANS_FAT,
-    Nutrient.MONOUNSATURATED_FAT,
-    Nutrient.POLYUNSATURATED_FAT,
-)
-
-/** A gap smaller than this is rounding, not something missing. */
-private const val GAP_FLOOR = 1.0
-
-/** What a detail line is: the group's whole, one of its parts, or the unaccounted gap. */
-private enum class Emphasis { WHOLE, PART, GAP }
-
-private data class DetailLine(val name: String, val value: String, val emphasis: Emphasis)
-
-/**
- * The day's finer detail: one line per nutrient, grouped under the thing it belongs to,
- * each group starting from its whole and ending with whatever the parts leave over.
- *
- * That last line is the point of the shape. Saturated, mono, poly and trans fat should
- * account for all of a day's fat, so a gap means a food's panel never recorded them —
- * worth saying rather than leaving the reader to wonder why the numbers do not add up.
- * Fiber and sugars are components of carbohydrate rather than a partition of it, so
- * their gap is real food (starch) and is named as such.
- */
-@Composable
-private fun DetailCard(totals: Nutrients) {
-    val groups = listOf(
-        detailGroup(totals, Nutrient.FAT.displayName, Nutrient.FAT, FAT_PARTS, "not recorded"),
-        detailGroup(
-            totals,
-            Nutrient.CARBS.displayName,
-            Nutrient.CARBS,
-            listOf(Nutrient.FIBER, Nutrient.SUGARS),
-            "starch and other",
-        ),
-        detailGroup(totals, "Other", null, listOf(Nutrient.SODIUM, Nutrient.CHOLESTEROL), null),
-    ).filter { it.isNotEmpty() }
-    if (groups.isEmpty()) return
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 12.dp)
-            // A quieter tone than the macro cards' surfaceVariant, so the detail reads
-            // as one step below them rather than as more of the same.
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.shapes.medium)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    ) {
-        groups.forEachIndexed { index, lines ->
-            if (index > 0) {
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 8.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant,
+        if (totals.amounts.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp)
+                    .clickable(onClick = onFullBreakdown)
+                    .padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Full breakdown", style = MaterialTheme.typography.bodyLarge)
+                Icon(
+                    Icons.Filled.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            lines.forEach { DetailRow(it) }
         }
     }
 }
 
-/** A group's lines, or nothing at all when none of its parts are known. */
-private fun detailGroup(
-    totals: Nutrients,
-    heading: String,
-    whole: Nutrient?,
-    parts: List<Nutrient>,
-    gapName: String?,
-): List<DetailLine> {
-    val known = parts.mapNotNull { nutrient -> totals[nutrient]?.let { nutrient to it } }
-    if (known.isEmpty()) return emptyList()
-
-    val total = whole?.let { totals[it] }
-    val lines = mutableListOf(
-        DetailLine(
-            name = heading,
-            value = if (whole != null && total != null) formatAmount(whole, total) else "",
-            emphasis = Emphasis.WHOLE,
-        ),
-    )
-    known.forEach { (nutrient, amount) ->
-        lines += DetailLine(nutrient.displayName, formatAmount(nutrient, amount), Emphasis.PART)
-    }
-    if (whole != null && total != null && gapName != null) {
-        val gap = total - known.sumOf { it.second }
-        if (gap >= GAP_FLOOR) {
-            lines += DetailLine(gapName, "${round(gap)}\u00a0${whole.unit}", Emphasis.GAP)
-        }
-    }
-    return lines
-}
-
 @Composable
-private fun DetailRow(line: DetailLine) {
-    val whole = line.emphasis == Emphasis.WHOLE
-    val style = if (whole) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium
-    val weight = if (whole) FontWeight.SemiBold else null
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(
-            line.name,
-            style = style,
-            fontWeight = weight,
-            color = if (whole) {
-                MaterialTheme.colorScheme.onSurface
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-            // The parts sit under the whole they belong to.
-            modifier = Modifier.padding(start = if (whole) 0.dp else 14.dp).weight(1f),
-        )
-        Text(
-            line.value,
-            style = style,
-            fontWeight = weight,
-            color = if (line.emphasis == Emphasis.GAP) {
-                // The gap is worked out from the others, not measured, so it is quieter.
-                MaterialTheme.colorScheme.onSurfaceVariant
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-        )
-    }
-}
-
-@Composable
-private fun RowScope.MacroCard(label: String, grams: Double?) {
+private fun RowScope.MacroCard(label: String, grams: Double?, accent: Boolean = false) {
     Column(
         modifier = Modifier
             .weight(1f)
@@ -335,6 +268,7 @@ private fun RowScope.MacroCard(label: String, grams: Double?) {
             grams?.let { "${round(it)} g" } ?: "\u2014",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
+            color = if (accent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
         )
         Text(
             label,
@@ -345,9 +279,12 @@ private fun RowScope.MacroCard(label: String, grams: Double?) {
 }
 
 @Composable
-private fun ItemRow(entry: LogEntryEntity) {
+private fun ItemRow(entry: LogEntryEntity, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 5.dp),
         verticalAlignment = Alignment.Top,
     ) {
         Column(Modifier.weight(1f)) {

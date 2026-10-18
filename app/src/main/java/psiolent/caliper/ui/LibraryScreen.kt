@@ -1,5 +1,6 @@
 package psiolent.caliper.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,7 +15,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -34,6 +38,9 @@ fun LibraryScreen(container: AppContainer) {
     val recipes by repo.observeRecipes().collectAsStateWithLifecycle(initialValue = emptyList())
     val batches by repo.observeBatches().collectAsStateWithLifecycle(initialValue = emptyList())
 
+    // The same breakdown sheet the day view uses, here for a batch or a food.
+    var breakdown by remember { mutableStateOf<BreakdownRequest?>(null) }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -47,6 +54,7 @@ fun LibraryScreen(container: AppContainer) {
                 subtitle = "${round(batch.totalGrams)} g in total",
                 detail = batch.per100g.summary(),
                 onDelete = { scope.launch { repo.deleteBatch(batch) } },
+                onOpen = { breakdown = BreakdownRequest(batch.name, batch.per100g, "per 100 g") },
             )
         }
 
@@ -72,9 +80,12 @@ fun LibraryScreen(container: AppContainer) {
                 ).joinToString(" \u00b7 "),
                 detail = "per 100 g: ${food.per100g.summary()}",
                 onDelete = { scope.launch { repo.deleteFood(food) } },
+                onOpen = { breakdown = BreakdownRequest(food.name, food.per100g, "per 100 g") },
             )
         }
     }
+
+    breakdown?.let { request -> BreakdownSheet(request) { breakdown = null } }
 }
 
 @Composable
@@ -92,9 +103,18 @@ private fun Empty(text: String) {
 }
 
 @Composable
-private fun ReadOnlyRow(title: String, subtitle: String, detail: String? = null, onDelete: () -> Unit) {
+private fun ReadOnlyRow(
+    title: String,
+    subtitle: String,
+    detail: String? = null,
+    onDelete: () -> Unit,
+    /** Where the full breakdown can be read, when the row holds a nutrient panel. */
+    onOpen: (() -> Unit)? = null,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = onOpen != null) { onOpen?.invoke() },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {

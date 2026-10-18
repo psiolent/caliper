@@ -56,6 +56,19 @@ data class Nutrients(val amounts: Map<Nutrient, Double> = emptyMap()) {
     /** Scale a per-100 g panel to an absolute gram weight. */
     fun forGrams(grams: Double): Nutrients = times(grams / 100.0)
 
+    /**
+     * What a set of a nutrient's parts leaves of the whole unaccounted for — null when
+     * the whole is unknown, which is not the same as nothing being left over.
+     *
+     * Saturated, trans, mono and poly fat should account for all of a fat total, so a
+     * remainder means a panel never recorded them. Fiber and sugars are components of
+     * carbohydrate rather than a partition of it, so a remainder there is starch. The
+     * arithmetic is the same either way; only what it means differs, which is the
+     * caller's business.
+     */
+    fun unaccounted(whole: Nutrient, parts: List<Nutrient>): Double? =
+        this[whole]?.let { total -> total - parts.mapNotNull { this[it] }.sum() }
+
     companion object {
         val EMPTY = Nutrients()
     }
