@@ -77,13 +77,6 @@ what that means for backup size). Showing them while the turn is live is the eas
 
 `ui/ChatScreen.kt`, `integrations/Images.kt`.
 
-## 9. Raise the agent's step limit
-
-`AgentRunner.MAX_STEPS` is 20, which a single photo of a sushi roll exhausted (see
-`docs/agent.md` on the agent log). The model is cheap — all development and testing so
-far cost about 11 cents — so raise it to something like 100, or even 200. A bound is
-still wanted, just not one this tight.
-
 ## Known friction, deliberately left alone
 
 - **Serving names match exactly.** The model logged "1 banana" as unit `banana` against

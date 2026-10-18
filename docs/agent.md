@@ -14,7 +14,8 @@ Each turn sends, in order:
 4. The new user turn, with one image part per attached photo.
 
 Nothing older than the current session is included. The loop is bounded by
-`AgentRunner.MAX_STEPS` (currently 20 — see `docs/pending.md`; it is too low).
+`AgentRunner.MAX_STEPS` (100), generous because the model is cheap and a photo can
+take many steps; the bound stops a runaway, it does not hurry the agent.
 
 ## What the prompt owns
 

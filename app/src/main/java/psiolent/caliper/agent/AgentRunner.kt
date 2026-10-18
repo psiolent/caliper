@@ -135,6 +135,12 @@ class AgentRunner(
     }
 
     private companion object {
-        const val MAX_STEPS = 20
+        /**
+         * How many model round trips one turn may take before it gives up and offers
+         * to continue. Generous on purpose: a single photo of a sushi roll burned
+         * through 20, and the model is cheap (all development cost about 11 cents).
+         * The bound exists to stop a runaway loop, not to hurry the agent.
+         */
+        const val MAX_STEPS = 100
     }
 }
