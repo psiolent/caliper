@@ -114,8 +114,25 @@ interface ProfileDao {
 
 @Dao
 interface SessionDao {
-    @Query("SELECT * FROM sessions ORDER BY startedAt DESC")
-    fun observeAll(): Flow<List<SessionEntity>>
+    /**
+     * Each session described by the two ends of its own conversation: the first thing the
+     * user said and the last thing the agent replied. Nothing is read across sessions and
+     * nothing is computed, so a description cannot drift from what was actually stored.
+     *
+     * A session is created when the app opens, before anything is said, so sessions with
+     * no messages at all are left out — an empty one is not a conversation.
+     */
+    @Query(
+        """
+        SELECT s.id AS sessionId, s.startedAt AS startedAt,
+            (SELECT content FROM messages WHERE sessionId = s.id AND role = 'USER' ORDER BY id LIMIT 1) AS opening,
+            (SELECT content FROM messages WHERE sessionId = s.id AND role = 'ASSISTANT' ORDER BY id DESC LIMIT 1) AS closing
+        FROM sessions s
+        WHERE EXISTS (SELECT 1 FROM messages WHERE sessionId = s.id)
+        ORDER BY s.startedAt DESC
+        """,
+    )
+    fun observeSummaries(): Flow<List<SessionSummary>>
 
     @Query("SELECT * FROM sessions")
     suspend fun all(): List<SessionEntity>

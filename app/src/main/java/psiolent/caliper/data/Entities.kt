@@ -122,6 +122,17 @@ data class SessionEntity(
     val startedAt: Long,
 )
 
+/**
+ * A session as the History list describes it: the first thing the user said and the last
+ * thing the agent replied, both taken from the session's own transcript.
+ */
+data class SessionSummary(
+    val sessionId: String,
+    val startedAt: Long,
+    val opening: String?,
+    val closing: String?,
+)
+
 @Serializable
 enum class MessageRole { USER, ASSISTANT }
 

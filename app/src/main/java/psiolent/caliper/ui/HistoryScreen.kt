@@ -1,6 +1,7 @@
 package psiolent.caliper.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,17 +19,25 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import psiolent.caliper.AppContainer
-import psiolent.caliper.data.SessionEntity
+import psiolent.caliper.data.SessionSummary
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 /**
- * Read-only session history. Sessions are a record for the user; the agent never
- * reads them back.
+ * Read-only session history. Sessions are a record for the user; the agent never reads
+ * them back.
+ *
+ * A session is described by the two ends of its own conversation — what was asked and
+ * what was answered — so the list is simply the transcripts, read back, rather than a
+ * second summary that could drift from them.
  */
 @Composable
 fun HistoryScreen(container: AppContainer) {
@@ -48,17 +57,73 @@ fun HistoryScreen(container: AppContainer) {
 
 @Composable
 private fun SessionList(container: AppContainer, onOpen: (String) -> Unit) {
-    val sessions by container.repository.observeSessions().collectAsStateWithLifecycle(initialValue = emptyList())
+    val sessions by container.repository.observeSessionSummaries()
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+
+    // Sessions arrive newest first; the heading changes when the day does.
+    val byDay = sessions.groupBy { LocalDate.ofInstant(Instant.ofEpochMilli(it.startedAt), ZoneId.systemDefault()) }
+    val today = LocalDate.now()
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         if (sessions.isEmpty()) {
-            item { Text("No conversations yet.", style = MaterialTheme.typography.bodySmall) }
+            item { Text("No conversations yet.", style = MaterialTheme.typography.bodyMedium) }
         }
-        items(sessions, key = SessionEntity::id) { session ->
-            TextButton(onClick = { onOpen(session.id) }) { Text(formatStarted(session.startedAt)) }
+        byDay.forEach { (day, daySessions) ->
+            item(key = "day:$day") { DayHeading(dayLabel(day, today)) }
+            items(daySessions, key = SessionSummary::sessionId) { session ->
+                SessionRow(session) { onOpen(session.sessionId) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DayHeading(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(top = 18.dp, bottom = 6.dp),
+    )
+}
+
+/**
+ * One session: when it happened, what opened it, and how the agent answered. The reply is
+ * cut short because the ask is the point; the whole thing is a tap away.
+ */
+@Composable
+private fun SessionRow(session: SessionSummary, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 9.dp),
+    ) {
+        Text(
+            timeFormat.format(Instant.ofEpochMilli(session.startedAt).atZone(ZoneId.systemDefault())),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            session.opening?.oneLine() ?: "(no message)",
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        session.closing?.oneLine()?.let { reply ->
+            Text(
+                reply,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 3.dp),
+            )
         }
     }
 }
@@ -78,7 +143,18 @@ private fun Transcript(container: AppContainer, sessionId: String, onBack: () ->
     }
 }
 
-private val startedFormat = DateTimeFormatter.ofPattern("EEE d MMM, HH:mm")
+/**
+ * Today and Yesterday by name, the weekday for the last week, and a date beyond that.
+ * "Last week" would be vaguer than saying which day it was.
+ */
+private fun dayLabel(day: LocalDate, today: LocalDate): String = when {
+    day == today -> "Today"
+    day == today.minusDays(1) -> "Yesterday"
+    day.isAfter(today.minusDays(7)) -> day.format(DateTimeFormatter.ofPattern("EEEE"))
+    else -> day.format(DateTimeFormatter.ofPattern("d MMMM"))
+}
 
-private fun formatStarted(epochMillis: Long): String =
-    Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).format(startedFormat)
+/** Replies are written for the chat, where newlines are meaningful; the list wants one line. */
+private fun String.oneLine(): String = replace('\n', ' ').replace(Regex(" +"), " ").trim()
+
+private val timeFormat: DateTimeFormatter = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)

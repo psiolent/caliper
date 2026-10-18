@@ -5,26 +5,14 @@ and ask the user which to take — they sequence this themselves.
 
 Ordered roughly as the user listed them, not by priority.
 
-## 1. History: group by day, and summarise each session
-
-Group sessions under "Today", "Yesterday", "Saturday", "Last week". Each entry should
-carry a short summary of what the session contained.
-
-Open question raised by the user: where does the summary come from? Resummarising at
-the end of every turn is one option, but it costs a model call per turn and would
-write on turns that did nothing. Something cheaper may exist — worth thinking about
-before building.
-
-`ui/HistoryScreen.kt`, `data` (sessions and messages).
-
-## 2. Settings: the model list needs containing
+## 1. Settings: the model list needs containing
 
 "Load current model list" dumps roughly 400 rows into the settings page. It needs its
 own scrollable, searchable view rather than being inlined.
 
 `ui/SettingsScreen.kt`.
 
-## 3. A turn and leaving the screen (tested; one design question left)
+## 2. A turn and leaving the screen (tested; one design question left)
 
 Tested on the phone, so this part is answered:
 

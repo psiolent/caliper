@@ -231,7 +231,7 @@ class CaliperRepository(private val db: CaliperDatabase) {
 
     // --- Sessions ----------------------------------------------------------
 
-    fun observeSessions(): Flow<List<SessionEntity>> = sessions.observeAll()
+    fun observeSessionSummaries(): Flow<List<SessionSummary>> = sessions.observeSummaries()
     suspend fun saveSession(session: SessionEntity) = sessions.upsert(session)
     fun observeMessages(sessionId: String): Flow<List<MessageEntity>> = messages.observeBySession(sessionId)
     suspend fun messages(sessionId: String): List<MessageEntity> = messages.bySession(sessionId)
