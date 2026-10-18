@@ -5,12 +5,18 @@ and ask the user which to take — they sequence this themselves.
 
 Ordered roughly as the user listed them, not by priority.
 
-## 1. Library: no visual distinction, no search, and untested recipes/batches
+## 1. Library: no visual distinction and no search
 
 Rows are undifferentiated and the list will grow without bound. Wants search, and
-probably tabs for Foods / Recipes / Batches. Separately: **recipes and batches have
-never been exercised at all** — no recipe has been saved and no batch made, so that
-whole path is unverified.
+probably tabs. It holds Recipes and Foods; batches are gone (`docs/decisions/0010`).
+
+The recipe path has since been exercised on the device — saving one, logging a portion
+in grams, half a recipe, and a cup of it, and a refusal for a unit the dish does not
+define. So the untested-path half of this item is done, and what is left is the screen.
+
+One gap worth closing with it: a recipe row shows no nutrition, because a recipe has no
+stored panel. It could compute and show one, and open the breakdown sheet the way a food
+row does.
 
 `ui/LibraryScreen.kt`.
 

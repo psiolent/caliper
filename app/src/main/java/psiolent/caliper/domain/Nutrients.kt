@@ -32,7 +32,7 @@ enum class Nutrient(val displayName: String, val unit: String, val shortName: St
  *
  * Only nutrients with a known value are present: an absent key means "unknown",
  * not zero. Values are for whatever basis the holder defines (per 100 g for a
- * food, per batch for a batch, per day for a total).
+ * food, per recipe for a recipe, per day for a total).
  */
 @Serializable
 data class Nutrients(val amounts: Map<Nutrient, Double> = emptyMap()) {
@@ -119,4 +119,4 @@ private val NUTRIENT_ALIASES: Map<String, Nutrient> = buildMap {
 /** Resolve a nutrient from a model-supplied key: an enum name, or a common label variant. */
 fun nutrientByKey(key: String): Nutrient? = NUTRIENT_ALIASES[nutrientKeyForm(key)]
 
-/** A panel of nutrients, plus the amounts a recipe or batch is computed from. */
+/** A panel of nutrients, plus the amounts a recipe is computed from. */

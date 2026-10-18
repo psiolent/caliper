@@ -21,7 +21,7 @@ network calls go to OpenRouter (models and web search) and to USDA FoodData Cent
 1. The user sends text and/or photos from the Chat screen (voice input is the
    keyboard's own dictation, not ours).
 2. `AgentRunner.send` stores the user message, then assembles a small context: the
-   system prompt, a briefing (today, the profile, today's totals, batches on hand),
+   system prompt, a briefing (today, the profile, today's totals),
    the current session's earlier messages, and the new turn.
 3. It calls the model with the tool schema. If the model asks for tools, the executor
    runs them against the repository and appends the results; the loop repeats, bounded

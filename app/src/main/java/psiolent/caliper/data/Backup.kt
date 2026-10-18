@@ -10,7 +10,6 @@ data class Backup(
     val profile: ProfileEntity? = null,
     val foods: List<FoodEntity> = emptyList(),
     val recipes: List<RecipeEntity> = emptyList(),
-    val batches: List<BatchEntity> = emptyList(),
     val meals: List<MealEntity> = emptyList(),
     val entries: List<LogEntryEntity> = emptyList(),
     val sessions: List<SessionEntity> = emptyList(),

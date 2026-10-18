@@ -11,4 +11,4 @@ re-sent at full price several times a day. Bounding context by session sidesteps
 that, and matches the instinct that one ever-growing context is the wrong shape.
 
 **Consequence.** References like "those oats" are resolved by querying the
-database (`recent_batches`), not by the model remembering an earlier message.
+database (`recipes`), not by the model remembering an earlier message.

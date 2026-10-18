@@ -58,27 +58,6 @@ interface RecipeDao {
 }
 
 @Dao
-interface BatchDao {
-    @Query("SELECT * FROM batches ORDER BY createdAt DESC")
-    fun observeAll(): Flow<List<BatchEntity>>
-
-    @Query("SELECT * FROM batches")
-    suspend fun all(): List<BatchEntity>
-
-    @Query("SELECT * FROM batches ORDER BY createdAt DESC LIMIT :limit")
-    suspend fun recent(limit: Int): List<BatchEntity>
-
-    @Query("SELECT * FROM batches WHERE id = :id")
-    suspend fun byId(id: String): BatchEntity?
-
-    @Upsert
-    suspend fun upsert(batch: BatchEntity)
-
-    @Delete
-    suspend fun delete(batch: BatchEntity)
-}
-
-@Dao
 interface MealDao {
     /** Meals in a time window, each with its items. */
     @Transaction
@@ -109,9 +88,6 @@ interface LogDao {
 
     @Query("SELECT * FROM log_entries WHERE id = :id")
     suspend fun byId(id: String): LogEntryEntity?
-
-    @Query("SELECT * FROM log_entries WHERE targetType = 'BATCH' AND targetId = :batchId")
-    suspend fun forBatch(batchId: String): List<LogEntryEntity>
 
     @Query("DELETE FROM log_entries WHERE mealId = :mealId")
     suspend fun deleteForMeal(mealId: String)

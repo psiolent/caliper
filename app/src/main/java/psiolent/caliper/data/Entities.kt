@@ -15,9 +15,9 @@ import psiolent.caliper.domain.Serving
 enum class FoodSource { LABEL, USDA, WEB, ESTIMATE }
 
 /**
- * A line of a recipe or a batch: a food, an amount, and the unit the amount is
- * expressed in. Units are resolved against the food's servings when the batch or
- * the log entry is computed, never stored as grams here.
+ * A line of a recipe: a food, an amount, and the unit the amount is expressed in.
+ * Units are resolved against the food's servings when the recipe is computed, never
+ * stored as grams here.
  */
 @Serializable
 data class Ingredient(val foodId: String, val amount: Double, val unit: String)
@@ -53,26 +53,18 @@ data class RecipeEntity(
 )
 
 /**
- * One dated preparation of a recipe. The ingredient list is a snapshot taken at
- * creation, so later recipe edits never rewrite an existing batch.
+ * The units a recipe can be logged in: the portions it names, plus the whole thing.
+ * The whole is what makes "half a recipe" sayable without the model dividing the yield
+ * itself, which it is not allowed to do.
  */
-@Serializable
-@Entity(tableName = "batches")
-data class BatchEntity(
-    @PrimaryKey val id: String,
-    val recipeId: String?,
-    val name: String,
-    val ingredients: List<Ingredient>,
-    val totalGrams: Double,
-    /** Nutrients per 100 g, computed from the snapshot. */
-    val per100g: Nutrients,
-    val estimated: Set<Nutrient> = emptySet(),
-    val servings: List<Serving> = emptyList(),
-    val createdAt: Long,
-)
+val RecipeEntity.portions: List<Serving>
+    get() = servings + Serving(RECIPE_UNIT, yieldGrams)
+
+/** The name of the unit meaning the whole recipe. */
+const val RECIPE_UNIT = "recipe"
 
 @Serializable
-enum class TargetType { FOOD, BATCH }
+enum class TargetType { FOOD, RECIPE }
 
 @Serializable
 @Entity(tableName = "meals")
@@ -106,7 +98,7 @@ data class LogEntryEntity(
     val mealId: String,
     val targetType: TargetType,
     val targetId: String,
-    /** The food or batch name at log time, for rendering without a join. */
+    /** The food or recipe name at log time, for rendering without a join. */
     val label: String,
     val amount: Double,
     val unit: String,

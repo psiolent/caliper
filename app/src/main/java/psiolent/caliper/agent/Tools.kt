@@ -9,13 +9,13 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import psiolent.caliper.data.BatchEntity
 import psiolent.caliper.data.CaliperRepository
 import psiolent.caliper.data.FoodEntity
 import psiolent.caliper.data.FoodSource
 import psiolent.caliper.data.Ingredient
 import psiolent.caliper.data.LogEntryEntity
 import psiolent.caliper.data.RecipeEntity
+import psiolent.caliper.data.portions
 import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
 import psiolent.caliper.domain.Serving
@@ -38,7 +38,7 @@ import java.util.UUID
 object ToolSchema {
 
     fun all(): List<JsonObject> = listOf(
-        findFood, recentBatches, recipes, getLog, saveFood, startMeal, logIntake, saveRecipe, updateRecipe, makeBatch, reviseEntry, updateProfile, updateMeal, deleteMeal,
+        findFood, recipes, getLog, saveFood, startMeal, logIntake, saveRecipe, updateRecipe, reviseEntry, updateProfile, updateMeal, deleteMeal,
     )
 
     private val nutrientKeys = Nutrient.entries.joinToString(", ") { it.name.lowercase() }
@@ -51,18 +51,11 @@ object ToolSchema {
         required = listOf("query"),
     )
 
-    private val recentBatches = function(
-        name = "recent_batches",
-        description = "List batches you have made recently, newest first. Use this to resolve references " +
-            "like 'those overnight oats', then log against the returned id.",
-        properties = obj(),
-    )
-
     private val recipes = function(
         name = "recipes",
-        description = "List the recipes you have defined, by name, with the ids needed to make a batch " +
-            "of one or to change it. Recipes are not otherwise readable, so use this rather than " +
-            "defining one again.",
+        description = "List the recipes you have defined, by name, with the ids needed to log against one " +
+            "or to change it. Recipes are not otherwise readable, so use this rather than defining one " +
+            "again. Each line lists the portions it can be logged in.",
         properties = obj(),
     )
 
@@ -133,13 +126,15 @@ object ToolSchema {
 
     private val logIntake = function(
         name = "log",
-        description = "Record something eaten, against a saved food or batch id. Give an amount and a unit: " +
-            "a mass unit (g, oz, lb), or a serving the food defines (cup, slice, tbsp).",
+        description = "Record something eaten, against a saved food or recipe id. Give an amount and a unit: " +
+            "a mass unit (g, oz, lb), a portion the food or recipe defines, or `recipe` to mean the whole " +
+            "dish, so half of it is 0.5 recipe. A unit that cannot be resolved comes back as an error " +
+            "listing the ones that would work.",
         properties = obj(
             "meal_id" to stringParam("The meal to add this item to, from start_meal."),
-            "target_id" to stringParam("Id of the food or batch."),
+            "target_id" to stringParam("Id of the food or recipe."),
             "amount" to numberParam("How much was eaten."),
-            "unit" to stringParam("Unit, e.g. g, oz, cup, slice."),
+            "unit" to stringParam("Unit, e.g. g, oz, cup, slice, recipe."),
         ),
         required = listOf("meal_id", "target_id", "amount", "unit"),
     )
@@ -159,8 +154,10 @@ object ToolSchema {
             ),
             "yield_grams" to numberParam("Total weight the recipe makes, in grams."),
             "servings" to arrayParam(
-                "Named portions of the finished dish.",
-                obj("name" to stringParam("Portion name, e.g. serving."), "grams" to numberParam("Weight in grams.")),
+                "Named portions of the finished dish. A portion named for a volume (\"cup\", \"tbsp\") is " +
+                    "a volume-to-weight ratio for the dish, and makes any volume unit loggable; without " +
+                    "one, volume units are refused.",
+                obj("name" to stringParam("Portion name, e.g. serving, or cup for a volume."), "grams" to numberParam("Weight in grams.")),
             ),
         ),
         required = listOf("name", "ingredients", "yield_grams"),
@@ -168,8 +165,8 @@ object ToolSchema {
 
     private val updateRecipe = function(
         name = "update_recipe",
-        description = "Change a recipe. Supply only the fields that change. This affects future batches only; " +
-            "batches already made keep the ingredients they were made with.",
+        description = "Change a recipe. Supply only the fields that change. Anything already logged keeps " +
+            "the panel it was logged with; this changes what is logged from now on.",
         properties = obj(
             "recipe_id" to stringParam("Id of the recipe to change."),
             "name" to stringParam("New name."),
@@ -186,18 +183,6 @@ object ToolSchema {
                 "Replacement portions of the finished dish.",
                 obj("name" to stringParam("Portion name."), "grams" to numberParam("Weight in grams.")),
             ),
-        ),
-        required = listOf("recipe_id"),
-    )
-
-    private val makeBatch = function(
-        name = "make_batch",
-        description = "Record that you made a recipe. Snapshots the recipe's current ingredients so later edits " +
-            "do not change it. Log portions of the batch afterwards with the returned id.",
-        properties = obj(
-            "recipe_id" to stringParam("Id of the recipe."),
-            "name" to stringParam("Optional name for this batch."),
-            "at" to stringParam("Optional ISO-8601 timestamp; defaults to now."),
         ),
         required = listOf("recipe_id"),
     )
@@ -306,7 +291,6 @@ class ToolExecutor(
         agentLog.append("$name $arguments")
         val result = when (name) {
             "find_food" -> findFood(args)
-            "recent_batches" -> recentBatches()
             "recipes" -> listRecipes()
             "get_log" -> getLog(args)
             "save_food" -> saveFood(args)
@@ -316,7 +300,6 @@ class ToolExecutor(
             "log" -> logIntake(args)
             "save_recipe" -> saveRecipe(args)
             "update_recipe" -> updateRecipe(args)
-            "make_batch" -> makeBatch(args)
             "revise_entry" -> reviseEntry(args)
             "update_profile" -> updateProfile(args)
             else -> "Unknown tool: $name"
@@ -342,14 +325,7 @@ class ToolExecutor(
             "\nSave the right one with save_food using its fdc_id."
     }
 
-    private suspend fun recentBatches(): String {
-        val batches = repo.recentBatches(5)
-        if (batches.isEmpty()) return "No batches yet."
-        val remaining = batches.map { it to repo.remainingGrams(it.id) }
-        return remaining.joinToString("\n") { (batch, left) -> describeBatch(batch, left) }
-    }
-
-    /** Recipes by name, with the ids needed to make or change one. */
+    /** Recipes by name, with the ids needed to log against one or to change it. */
     private suspend fun listRecipes(): String {
         val recipes = repo.allRecipes()
         if (recipes.isEmpty()) return "No recipes yet."
@@ -369,8 +345,10 @@ class ToolExecutor(
                 "${ingredient.amount.toInt()} ${ingredient.unit} $name"
             }
             .joinToString(", ")
+        // The portions are the units this recipe can be logged in, the whole included.
+        val portions = recipe.portions.joinToString(", ") { "${it.name}=${it.grams.toInt()}g" }
         return "- id=${recipe.id} name=\"${recipe.name}\" makes=${recipe.yieldGrams.toInt()} g " +
-            "ingredients=[$ingredients]"
+            "portions=[$portions] ingredients=[$ingredients]"
     }
 
     /**
@@ -452,9 +430,9 @@ class ToolExecutor(
 
         val entry = when {
             repo.food(targetId) != null -> repo.logFood(targetId, amount, unit, mealId)
-            repo.batch(targetId) != null -> repo.logBatch(targetId, amount, unit, mealId)
-            else -> return "Error: no food or batch with id $targetId. " +
-                "Use find_food to get a food's id, or recent_batches for a batch you made."
+            repo.recipe(targetId) != null -> repo.logRecipe(targetId, amount, unit, mealId)
+            else -> return "Error: no food or recipe with id $targetId. " +
+                "Use find_food for a food, or recipes for a recipe you defined."
         }
         val mealLabel = repo.meal(mealId)?.label.orEmpty()
         return "Logged to \"$mealLabel\". entry_id=${entry.id} ${describeEntry(entry)}"
@@ -490,14 +468,6 @@ class ToolExecutor(
             servings = servings,
         )
         return "Updated recipe id=${recipe.id} name=\"${recipe.name}\"."
-    }
-
-    private suspend fun makeBatch(args: JsonObject): String {
-        val recipeId = args.string("recipe_id") ?: return "Error: recipe_id is required"
-        val recipe = repo.recipe(recipeId) ?: return unknownRecipe(recipeId)
-        val at = whenArg(args.string("at")) ?: Instant.now()
-        val batch = repo.makeBatch(recipe.id, args.string("name"), at)
-        return "Made batch id=${batch.id} name=\"${batch.name}\" total=${batch.totalGrams.toInt()} g."
     }
 
     private suspend fun reviseEntry(args: JsonObject): String {
@@ -597,14 +567,6 @@ class ToolExecutor(
         if (food.servings.isNotEmpty()) {
             append(" servings=[${food.servings.joinToString(", ") { "${it.name}=${it.grams}g" }}]")
         }
-    }
-
-    private fun describeBatch(batch: BatchEntity, remaining: Double?): String = buildString {
-        append("- id=${batch.id} name=\"${batch.name}\"")
-        append(" made=${LocalDate.ofInstant(Instant.ofEpochMilli(batch.createdAt), java.time.ZoneId.systemDefault())}")
-        append(" total=${batch.totalGrams.toInt()}g")
-        remaining?.let { append(" remaining=${it.toInt()}g") }
-        append(" per100g={${describeNutrients(batch.per100g, includeUnits = false)}}")
     }
 
     private fun describeEntry(entry: LogEntryEntity): String = buildString {

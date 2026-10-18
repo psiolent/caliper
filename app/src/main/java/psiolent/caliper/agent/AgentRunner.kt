@@ -132,7 +132,6 @@ class AgentRunner(
         val profile = repo.profileText().ifBlank { "(nothing recorded yet)" }
         val today = LocalDate.now(ZoneId.systemDefault())
         val day = repo.day(today)
-        val batches = repo.recentBatches(3)
         val totals = day.totals.amounts.entries
             .joinToString(", ") { "${it.key.name.lowercase()}=${it.value.toInt()}${it.key.unit}" }
             .ifBlank { "nothing logged" }
@@ -143,9 +142,6 @@ class AgentRunner(
             appendLine(profile)
             appendLine()
             appendLine("Today so far: $totals")
-            if (batches.isNotEmpty()) {
-                appendLine("Batches on hand: " + batches.joinToString("; ") { "${it.name} (id=${it.id})" })
-            }
         }
     }
 

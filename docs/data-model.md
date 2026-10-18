@@ -18,23 +18,23 @@ Canonical nutrition for one food or product, stored **per 100 g**.
 - `createdAt`
 
 ### `recipes` — `RecipeEntity`
-A named formulation. Its nutrients are *computed*, never entered.
+A named formulation, and something you can log a portion of. Its nutrients are
+*computed* from its ingredients, never entered.
 - `id`, `name`
 - `ingredients: List<Ingredient>` — each a `foodId`, `amount`, `unit`
 - `yieldGrams` — total weight the recipe makes
-- `servings: List<Serving>` — named portions of the finished dish
+- `servings: List<Serving>` — named portions of the finished dish. A portion named
+  for a volume ("cup = 220 g") is a volume-to-weight ratio, and makes any volume unit
+  loggable for that dish.
 - `createdAt`
 
-### `batches` — `BatchEntity`
-One dated preparation of a recipe.
-- `id`, `recipeId`, `name`
-- `ingredients: List<Ingredient>` — **a snapshot** taken at creation
-- `totalGrams`
-- `per100g: Nutrients` — computed from the snapshot at creation
-- `estimated: Set<Nutrient>`, `servings`, `createdAt`
+A recipe also answers to the unit `recipe` meaning the whole thing, which is how
+"half a recipe" is said without anyone dividing the yield but the app (see
+`RecipeEntity.portions`).
 
-Because the snapshot is fixed, editing a recipe later changes future batches only.
-"How much is left" is never stored; it is derived from logged consumption.
+There is no batch table. A recipe *is* the thing you log: logging a portion computes
+its panel from the ingredients at that moment, and the logged entry keeps its own
+snapshot. See `docs/decisions/0010`.
 
 ### `meals` — `MealEntity`
 A meal: a grouping the **agent** creates, holding the items eaten together.
@@ -49,7 +49,7 @@ eaten in one session is one meal unless the user says otherwise, and it names ea
 ### `log_entries` — `LogEntryEntity`
 A single item eaten. It has no time of its own.
 - `id`, `mealId` — the meal it belongs to
-- `targetType: FOOD|BATCH`, `targetId`
+- `targetType: FOOD|RECIPE`, `targetId`
 - `label` — the target's name at log time, so history renders without a join
 - `amount`, `unit`, `grams` — the resolved weight
 - `nutrients: Nutrients` — **snapshotted** at log time, so corrections to a food
@@ -72,9 +72,10 @@ full image is still never kept.
 
 ## Notes
 
-- Schema version is 4. Migrations live in `CaliperDatabase`; two of them rebuilt
+- Schema version is 5. Migrations live in `CaliperDatabase`; two of them rebuilt
   `log_entries` as the meal model settled, and the data was wiped alongside both by
-  agreement with the user.
+  agreement with the user. The fifth dropped `batches` once a recipe became the thing
+  you log, repointing anything logged against a batch at its recipe.
 - An absent nutrient in a panel means *unknown*, not zero.
 - `Nutrients` is a map over a closed `Nutrient` enum. Adding a nutrient is an enum
   value plus, if needed, a converter — no schema migration.

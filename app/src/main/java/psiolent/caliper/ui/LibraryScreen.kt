@@ -36,9 +36,8 @@ fun LibraryScreen(container: AppContainer) {
     val scope = rememberCoroutineScope()
     val foods by repo.observeFoods().collectAsStateWithLifecycle(initialValue = emptyList())
     val recipes by repo.observeRecipes().collectAsStateWithLifecycle(initialValue = emptyList())
-    val batches by repo.observeBatches().collectAsStateWithLifecycle(initialValue = emptyList())
 
-    // The same breakdown sheet the day view uses, here for a batch or a food.
+    // The same breakdown sheet the day view uses, here for a food or a recipe.
     var breakdown by remember { mutableStateOf<BreakdownRequest?>(null) }
 
     LazyColumn(
@@ -46,18 +45,6 @@ fun LibraryScreen(container: AppContainer) {
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        item { Header("Batches (${batches.size})") }
-        if (batches.isEmpty()) item { Empty("Nothing made yet.") }
-        items(batches, key = { it.id }) { batch ->
-            ReadOnlyRow(
-                title = batch.name,
-                subtitle = "${round(batch.totalGrams)} g in total",
-                detail = batch.per100g.summary(),
-                onDelete = { scope.launch { repo.deleteBatch(batch) } },
-                onOpen = { breakdown = BreakdownRequest(batch.name, batch.per100g, "per 100 g") },
-            )
-        }
-
         item { Header("Recipes (${recipes.size})") }
         if (recipes.isEmpty()) item { Empty("No recipes yet.") }
         items(recipes, key = { it.id }) { recipe ->

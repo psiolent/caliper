@@ -9,7 +9,7 @@ Each turn sends, in order:
 
 1. A system message with the static instructions (`Prompt.SYSTEM`).
 2. A second system message with the briefing: today's date, the profile, today's
-   totals, and batches on hand (`AgentRunner.context`).
+   totals (`AgentRunner.context`).
 3. The current session's earlier messages.
 4. The new user turn, with one image part per attached photo.
 
@@ -38,7 +38,9 @@ The app stores what the agent decides. It has no opinion about grouping.
 Reads:
 - `find_food(query)` — saved foods first, then USDA FoodData Central. Returns
   candidates; USDA candidates carry an `fdc_id`.
-- `recent_batches()` — newest first, for resolving "those oats I made".
+- `recipes()` — the recipes saved so far, by name, each with the portions it can be
+  logged in. Recipes are not otherwise readable, so this is how one you defined earlier
+  is found (and how a wrong recipe id is recovered from).
 - `get_log(date)` — a day's meals, their items, and totals.
 
 Writes:
@@ -49,10 +51,11 @@ Writes:
 - `save_food(...)` — create or update a food. Give `per_100g`, or an `fdc_id` and the
   app fetches the panel itself (the model never transcribes numbers). Reuses an
   existing row with the same name and brand rather than adding a duplicate.
-- `log(meal_id, target_id, amount, unit)` — add an item to a meal. No time: the item
-  belongs to the meal's.
-- `save_recipe(...)`, `update_recipe(...)`, `make_batch(...)` — the recipe/batch
-  lifecycle.
+- `log(meal_id, target_id, amount, unit)` — add an item to a meal. The target is a food
+  or a recipe. No time: the item belongs to the meal's. A unit that cannot be resolved
+  comes back as an error naming the ones that would work.
+- `save_recipe(...)`, `update_recipe(...)` — defining a recipe and changing it. A recipe
+  is logged against directly; anything already logged keeps the panel it was logged with.
 - `revise_entry(entry_id, amount?, unit?, delete?)` — fix or delete a logged item.
 - `update_profile(text)` — replace the profile document.
 

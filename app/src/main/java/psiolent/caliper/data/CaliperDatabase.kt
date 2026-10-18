@@ -12,14 +12,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         FoodEntity::class,
         RecipeEntity::class,
-        BatchEntity::class,
         MealEntity::class,
         LogEntryEntity::class,
         ProfileEntity::class,
         SessionEntity::class,
         MessageEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -27,7 +26,6 @@ abstract class CaliperDatabase : RoomDatabase() {
 
     abstract fun foods(): FoodDao
     abstract fun recipes(): RecipeDao
-    abstract fun batches(): BatchDao
     abstract fun meals(): MealDao
     abstract fun logs(): LogDao
     abstract fun profile(): ProfileDao
@@ -86,9 +84,25 @@ abstract class CaliperDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * A batch and a recipe became one thing: a recipe you can log against. Items
+         * already logged against a batch are repointed at the recipe that batch was made
+         * from — their own nutrient snapshots are untouched — and the batch table goes.
+         */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "UPDATE `log_entries` SET `targetType` = 'RECIPE', `targetId` = COALESCE(" +
+                        "(SELECT `recipeId` FROM `batches` WHERE `batches`.`id` = `log_entries`.`targetId`), " +
+                        "`targetId`) WHERE `targetType` = 'BATCH'",
+                )
+                db.execSQL("DROP TABLE IF EXISTS `batches`")
+            }
+        }
+
         fun open(context: Context): CaliperDatabase =
             Room.databaseBuilder(context.applicationContext, CaliperDatabase::class.java, "caliper.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
     }
 }

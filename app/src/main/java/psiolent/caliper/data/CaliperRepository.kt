@@ -20,14 +20,13 @@ data class DayView(
 
 /**
  * The single entry point to stored state. All arithmetic (unit resolution,
- * nutrient scaling, batch panels) lives here and in [psiolent.caliper.domain],
+ * nutrient scaling, recipe panels) lives here and in [psiolent.caliper.domain],
  * never in the agent.
  */
 class CaliperRepository(private val db: CaliperDatabase) {
 
     private val foods = db.foods()
     private val recipes = db.recipes()
-    private val batches = db.batches()
     private val meals = db.meals()
     private val logs = db.logs()
     private val profile = db.profile()
@@ -49,25 +48,15 @@ class CaliperRepository(private val db: CaliperDatabase) {
     suspend fun searchFoods(query: String): List<FoodEntity> = foods.search(query)
     suspend fun food(id: String): FoodEntity? = foods.byId(id)
     suspend fun foodByNameAndBrand(name: String, brand: String?): FoodEntity? = foods.byNameAndBrand(name, brand)
-    suspend fun recentBatches(limit: Int = 5): List<BatchEntity> = batches.recent(limit)
-    suspend fun batch(id: String): BatchEntity? = batches.byId(id)
     suspend fun entry(id: String): LogEntryEntity? = logs.byId(id)
 
     fun observeFoods(): Flow<List<FoodEntity>> = foods.observeAll()
     fun observeRecipes(): Flow<List<RecipeEntity>> = recipes.observeAll()
-    fun observeBatches(): Flow<List<BatchEntity>> = batches.observeAll()
 
     suspend fun recipe(id: String): RecipeEntity? = recipes.byId(id)
 
-    /** Recipes by name, for finding one to make a batch of or to change. */
+    /** Recipes by name, for finding one to log against or to change. */
     suspend fun allRecipes(): List<RecipeEntity> = recipes.all()
-
-    /** What is left of a batch, derived from what has been logged against it. */
-    suspend fun remainingGrams(batchId: String): Double? {
-        val batch = batches.byId(batchId) ?: return null
-        val consumed = logs.forBatch(batchId).sumOf { it.grams }
-        return (batch.totalGrams - consumed).coerceAtLeast(0.0)
-    }
 
     suspend fun profileText(): String = profile.get()?.text.orEmpty()
     suspend fun saveProfile(text: String) = profile.upsert(ProfileEntity(text = text))
@@ -77,7 +66,6 @@ class CaliperRepository(private val db: CaliperDatabase) {
     suspend fun saveFood(food: FoodEntity) = foods.upsert(food)
     suspend fun deleteFood(food: FoodEntity) = foods.delete(food)
     suspend fun deleteRecipe(recipe: RecipeEntity) = recipes.delete(recipe)
-    suspend fun deleteBatch(batch: BatchEntity) = batches.delete(batch)
 
     // --- Logging -----------------------------------------------------------
 
@@ -86,9 +74,15 @@ class CaliperRepository(private val db: CaliperDatabase) {
         return log(mealId, TargetType.FOOD, food.id, food.name, food.per100g, food.servings, amount, unit)
     }
 
-    suspend fun logBatch(batchId: String, amount: Double, unit: String, mealId: String): LogEntryEntity {
-        val batch = batches.byId(batchId) ?: throw IllegalArgumentException("No batch with id $batchId")
-        return log(mealId, TargetType.BATCH, batch.id, batch.name, batch.per100g, batch.servings, amount, unit)
+    /**
+     * Log a portion of a recipe. Its panel is worked out from the ingredients each
+     * time, so a recipe edited today applies to what is logged from now on; anything
+     * already logged keeps the panel it was logged with.
+     */
+    suspend fun logRecipe(recipeId: String, amount: Double, unit: String, mealId: String): LogEntryEntity {
+        val recipe = recipes.byId(recipeId) ?: throw IllegalArgumentException("No recipe with id $recipeId")
+        val (per100g, _) = computePanel(recipe.ingredients, recipe.yieldGrams)
+        return log(mealId, TargetType.RECIPE, recipe.id, recipe.name, per100g, recipe.portions, amount, unit)
     }
 
     private suspend fun log(
@@ -103,7 +97,7 @@ class CaliperRepository(private val db: CaliperDatabase) {
     ): LogEntryEntity {
         val meal = meals.byId(mealId) ?: throw IllegalArgumentException("No meal with id $mealId")
         val grams = resolveGrams(amount, unit, servings)
-            ?: throw IllegalArgumentException("Cannot express $amount $unit of \"$label\"")
+            ?: throw IllegalArgumentException(unitMessage(amount, unit, label, servings))
         val entry = LogEntryEntity(
             id = newId(),
             mealId = mealId,
@@ -171,10 +165,12 @@ class CaliperRepository(private val db: CaliperDatabase) {
     private suspend fun targetPanel(entry: LogEntryEntity): Pair<Nutrients, List<Serving>>? =
         when (entry.targetType) {
             TargetType.FOOD -> foods.byId(entry.targetId)?.let { it.per100g to it.servings }
-            TargetType.BATCH -> batches.byId(entry.targetId)?.let { it.per100g to it.servings }
+            TargetType.RECIPE -> recipes.byId(entry.targetId)?.let {
+                computePanel(it.ingredients, it.yieldGrams).first to it.portions
+            }
         }
 
-    // --- Recipes and batches ----------------------------------------------
+    // --- Recipes -----------------------------------------------------------
 
     suspend fun saveRecipe(
         name: String,
@@ -207,25 +203,6 @@ class CaliperRepository(private val db: CaliperDatabase) {
         return updated
     }
 
-    /** Start a batch: snapshot the recipe's ingredients and compute its panel once. */
-    suspend fun makeBatch(recipeId: String, name: String? = null, at: Instant = Instant.now()): BatchEntity {
-        val recipe = recipes.byId(recipeId) ?: throw IllegalArgumentException("No recipe with id $recipeId")
-        val (per100g, estimated) = computePanel(recipe.ingredients, recipe.yieldGrams)
-        val batch = BatchEntity(
-            id = newId(),
-            recipeId = recipe.id,
-            name = name ?: recipe.name,
-            ingredients = recipe.ingredients,
-            totalGrams = recipe.yieldGrams,
-            per100g = per100g,
-            estimated = estimated,
-            servings = recipe.servings,
-            createdAt = at.toEpochMilli(),
-        )
-        batches.upsert(batch)
-        return batch
-    }
-
     private suspend fun computePanel(ingredients: List<Ingredient>, yieldGrams: Double): Pair<Nutrients, Set<Nutrient>> {
         require(yieldGrams > 0) { "A recipe needs a yield greater than zero" }
         var totals = Nutrients.EMPTY
@@ -255,7 +232,6 @@ class CaliperRepository(private val db: CaliperDatabase) {
         profile = profile.get(),
         foods = foods.all(),
         recipes = recipes.all(),
-        batches = batches.all(),
         meals = meals.all(),
         entries = logs.all(),
         sessions = sessions.all(),
@@ -266,7 +242,6 @@ class CaliperRepository(private val db: CaliperDatabase) {
         backup.profile?.let { profile.upsert(it) }
         backup.foods.forEach { foods.upsert(it) }
         backup.recipes.forEach { recipes.upsert(it) }
-        backup.batches.forEach { batches.upsert(it) }
         backup.meals.forEach { meals.upsert(it) }
         backup.entries.forEach { logs.upsert(it) }
         backup.sessions.forEach { sessions.upsert(it) }
@@ -277,6 +252,13 @@ class CaliperRepository(private val db: CaliperDatabase) {
 
     fun startOfDay(date: LocalDate): Long =
         date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    /** Why a unit did not resolve, and what would have. */
+    private fun unitMessage(amount: Double, unit: String, label: String, servings: List<Serving>): String {
+        val portions = servings.joinToString(", ") { it.name }
+        return "Cannot express $amount $unit of \"$label\". Use a mass unit (g, oz, lb)" +
+            if (portions.isBlank()) "." else ", or one of its portions: $portions."
+    }
 
     private fun newId(): String = UUID.randomUUID().toString()
 }
