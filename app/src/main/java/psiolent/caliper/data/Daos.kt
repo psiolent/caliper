@@ -19,6 +19,13 @@ interface FoodDao {
     @Query("SELECT * FROM foods WHERE id = :id")
     suspend fun byId(id: String): FoodEntity?
 
+    /** Used to reuse a food the model is saving again rather than pile up duplicates. */
+    @Query(
+        "SELECT * FROM foods WHERE name = :name COLLATE NOCASE " +
+            "AND IFNULL(brand, '') = IFNULL(:brand, '') LIMIT 1",
+    )
+    suspend fun byNameAndBrand(name: String, brand: String?): FoodEntity?
+
     @Query(
         "SELECT * FROM foods WHERE name LIKE '%' || :query || '%' " +
             "OR (brand IS NOT NULL AND brand LIKE '%' || :query || '%') ORDER BY name LIMIT 25",

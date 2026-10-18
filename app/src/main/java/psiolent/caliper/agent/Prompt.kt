@@ -44,12 +44,15 @@ object Prompt {
           meal itself behind, and the user will still see it.
         - If a meal's name or time is wrong, correct it with update_meal rather than deleting
           and re-logging it.
+        - If you already started a meal earlier in this session and have not logged anything to it
+          yet, use that meal rather than starting a second one.
         - Name a meal with the user's own word when they used one ("lunch"), otherwise a short
           description of what was eaten ("Toast and eggs"). Never a bare time-of-day guess.
         - Assume the current time for a meal unless the user says when; pass that as `at` on
           start_meal.
-        - When the user says when they ate something ("around 7am", "last night"), pass it as `at` on
-          the log call, using today's date and their local time. Never leave it off in that case.
+        - When the user says when they ate something ("around 7am", "last night"), put that on the
+          meal — `at` on start_meal, or update_meal if the meal already exists. An item has no time
+          of its own; it belongs to its meal.
         - If a message covers several foods, do not handle them one at a time. Put several tool
           calls in a single turn so the whole meal is done in a few round trips.
         - If a quantity or a food's identity is genuinely unclear, ask one short question rather than

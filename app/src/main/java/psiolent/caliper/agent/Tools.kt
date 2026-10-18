@@ -1,6 +1,5 @@
 package psiolent.caliper.agent
 
-import android.util.Log
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -20,6 +19,7 @@ import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
 import psiolent.caliper.domain.Serving
 import psiolent.caliper.domain.nutrientByKey
+import psiolent.caliper.integrations.AgentLog
 import psiolent.caliper.integrations.UsdaClient
 import psiolent.caliper.integrations.UsdaFood
 import java.time.Instant
@@ -131,7 +131,6 @@ object ToolSchema {
             "target_id" to stringParam("Id of the food or batch."),
             "amount" to numberParam("How much was eaten."),
             "unit" to stringParam("Unit, e.g. g, oz, cup, slice."),
-            "at" to stringParam("Only if this item's own time differs from the meal's."),
         ),
         required = listOf("meal_id", "target_id", "amount", "unit"),
     )
@@ -201,7 +200,6 @@ object ToolSchema {
             "entry_id" to stringParam("Id of the log entry."),
             "amount" to numberParam("New amount."),
             "unit" to stringParam("New unit."),
-            "at" to stringParam("New time, if the original was wrong."),
             "delete" to boolParam("Set true to remove the entry."),
         ),
         required = listOf("entry_id"),
@@ -272,12 +270,12 @@ object ToolSchema {
 class ToolExecutor(
     private val repo: CaliperRepository,
     private val usda: UsdaClient,
+    private val agentLog: AgentLog,
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
     private companion object {
-        const val TAG = "Caliper"
         val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
         const val WHEN_MESSAGE =
             "'at' could not be read as a time. Use a local date-time like 2026-10-18T07:00, or a time like 07:00."
@@ -292,8 +290,8 @@ class ToolExecutor(
 
     suspend fun execute(name: String, arguments: String): String = try {
         val args = args(arguments)
-        Log.d(TAG, "tool $name $arguments")
-        when (name) {
+        agentLog.append("$name $arguments")
+        val result = when (name) {
             "find_food" -> findFood(args)
             "recent_batches" -> recentBatches()
             "get_log" -> getLog(args)
@@ -309,7 +307,10 @@ class ToolExecutor(
             "update_profile" -> updateProfile(args)
             else -> "Unknown tool: $name"
         }
+        agentLog.append("  \u2192 ${result.replace('\n', ' ').take(300)}")
+        result
     } catch (e: Exception) {
+        agentLog.append("  \u2192 Error: ${e.message}")
         "Error: ${e.message}"
     }
 
@@ -348,9 +349,13 @@ class ToolExecutor(
 
     private suspend fun saveFood(args: JsonObject): String {
         val name = args.string("name") ?: return "Error: name is required"
-        val existing = args.string("food_id")?.let { repo.food(it) }
         val fdcId = args.number("fdc_id")?.toInt()
         val fromUsda = if (fdcId == null) null else usda.byId(fdcId) ?: return "Error: no USDA food with id $fdcId"
+        val brand = args.string("brand") ?: fromUsda?.brand
+        // Reuse a row for the same food rather than adding another: a long turn can save
+        // the same food more than once, and duplicates then clutter every search.
+        val existing = args.string("food_id")?.let { repo.food(it) }
+            ?: repo.foodByNameAndBrand(name, brand)
         val per100gRaw = args["per_100g"]
         val per100g = per100gRaw as? JsonObject
         // Only complain when the value is actually needed; with an fdc_id it is redundant.
@@ -394,11 +399,10 @@ class ToolExecutor(
         val targetId = args.string("target_id") ?: return "Error: target_id is required"
         val amount = args.number("amount") ?: return "Error: amount is required"
         val unit = args.string("unit") ?: return "Error: unit is required"
-        val at = whenArg(args.string("at"))
 
         val entry = when {
-            repo.food(targetId) != null -> repo.logFood(targetId, amount, unit, mealId, at)
-            repo.batch(targetId) != null -> repo.logBatch(targetId, amount, unit, mealId, at)
+            repo.food(targetId) != null -> repo.logFood(targetId, amount, unit, mealId)
+            repo.batch(targetId) != null -> repo.logBatch(targetId, amount, unit, mealId)
             else -> return "Error: no food or batch with id $targetId"
         }
         val mealLabel = repo.meal(mealId)?.label.orEmpty()
@@ -450,12 +454,10 @@ class ToolExecutor(
             return "Deleted entry $id."
         }
         val existing = repo.entry(id) ?: return "Error: no entry with id $id"
-        val at = whenArg(args.string("at"))
         repo.reviseEntry(
             id = id,
             amount = args.number("amount") ?: existing.amount,
             unit = args.string("unit") ?: existing.unit,
-            at = at,
         )
         return "Revised entry $id."
     }

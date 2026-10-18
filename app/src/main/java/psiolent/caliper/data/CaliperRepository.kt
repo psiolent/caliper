@@ -49,6 +49,7 @@ class CaliperRepository(private val db: CaliperDatabase) {
 
     suspend fun searchFoods(query: String): List<FoodEntity> = foods.search(query)
     suspend fun food(id: String): FoodEntity? = foods.byId(id)
+    suspend fun foodByNameAndBrand(name: String, brand: String?): FoodEntity? = foods.byNameAndBrand(name, brand)
     suspend fun recentBatches(limit: Int = 5): List<BatchEntity> = batches.recent(limit)
     suspend fun batch(id: String): BatchEntity? = batches.byId(id)
     suspend fun entry(id: String): LogEntryEntity? = logs.byId(id)
@@ -76,14 +77,14 @@ class CaliperRepository(private val db: CaliperDatabase) {
 
     // --- Logging -----------------------------------------------------------
 
-    suspend fun logFood(foodId: String, amount: Double, unit: String, mealId: String, at: Instant? = null): LogEntryEntity {
+    suspend fun logFood(foodId: String, amount: Double, unit: String, mealId: String): LogEntryEntity {
         val food = foods.byId(foodId) ?: throw IllegalArgumentException("No food with id $foodId")
-        return log(mealId, TargetType.FOOD, food.id, food.name, food.per100g, food.servings, amount, unit, at)
+        return log(mealId, TargetType.FOOD, food.id, food.name, food.per100g, food.servings, amount, unit)
     }
 
-    suspend fun logBatch(batchId: String, amount: Double, unit: String, mealId: String, at: Instant? = null): LogEntryEntity {
+    suspend fun logBatch(batchId: String, amount: Double, unit: String, mealId: String): LogEntryEntity {
         val batch = batches.byId(batchId) ?: throw IllegalArgumentException("No batch with id $batchId")
-        return log(mealId, TargetType.BATCH, batch.id, batch.name, batch.per100g, batch.servings, amount, unit, at)
+        return log(mealId, TargetType.BATCH, batch.id, batch.name, batch.per100g, batch.servings, amount, unit)
     }
 
     private suspend fun log(
@@ -95,7 +96,6 @@ class CaliperRepository(private val db: CaliperDatabase) {
         servings: List<Serving>,
         amount: Double,
         unit: String,
-        at: Instant?,
     ): LogEntryEntity {
         val meal = meals.byId(mealId) ?: throw IllegalArgumentException("No meal with id $mealId")
         val grams = resolveGrams(amount, unit, servings)
@@ -110,8 +110,8 @@ class CaliperRepository(private val db: CaliperDatabase) {
             unit = unit,
             grams = grams,
             nutrients = per100g.forGrams(grams),
-            // An item with no time of its own belongs to when the meal happened.
-            at = (at ?: Instant.ofEpochMilli(meal.at)).toEpochMilli(),
+            // An item has no time of its own; it belongs to when the meal happened.
+            at = meal.at,
         )
         logs.upsert(entry)
         return entry
@@ -145,8 +145,8 @@ class CaliperRepository(private val db: CaliperDatabase) {
         meals.delete(id)
     }
 
-    /** Replace an entry's amount, unit, and time. The caller supplies complete values. */
-    suspend fun reviseEntry(id: String, amount: Double, unit: String, at: Instant? = null) {
+    /** Replace an entry's amount and unit. Its time is the meal's, not its own. */
+    suspend fun reviseEntry(id: String, amount: Double, unit: String) {
         val existing = logs.byId(id) ?: throw IllegalArgumentException("No log entry with id $id")
         val (per100g, servings) = targetPanel(existing)
             ?: throw IllegalArgumentException(
@@ -160,7 +160,6 @@ class CaliperRepository(private val db: CaliperDatabase) {
                 unit = unit,
                 grams = grams,
                 nutrients = per100g.forGrams(grams),
-                at = at?.toEpochMilli() ?: existing.at,
             ),
         )
     }

@@ -6,6 +6,7 @@ import psiolent.caliper.data.MessageEntity
 import psiolent.caliper.data.MessageRole
 import psiolent.caliper.data.SessionEntity
 import psiolent.caliper.data.SettingsStore
+import psiolent.caliper.integrations.AgentLog
 import psiolent.caliper.integrations.UsdaClient
 import java.time.Instant
 import java.time.LocalDate
@@ -20,6 +21,7 @@ import java.util.UUID
 class AgentRunner(
     private val repo: CaliperRepository,
     private val settings: SettingsStore,
+    private val agentLog: AgentLog,
 ) {
     private val tools = ToolSchema.all()
 
@@ -44,7 +46,8 @@ class AgentRunner(
             MessageEntity(sessionId = sessionId, role = MessageRole.USER, content = userText, at = Instant.now().toEpochMilli()),
         )
 
-        val executor = ToolExecutor(repo, UsdaClient(settings.usdaApiKey))
+        val executor = ToolExecutor(repo, UsdaClient(settings.usdaApiKey), agentLog)
+        agentLog.append("── user: ${userText.ifBlank { "(no text)" }} (${imageDataUrls.size} photo(s))")
         var cost = 0.0
         return try {
             val model = settings.modelFor(imageDataUrls.isNotEmpty())
@@ -105,6 +108,7 @@ class AgentRunner(
             MessageEntity(sessionId = sessionId, role = MessageRole.ASSISTANT, content = text, at = Instant.now().toEpochMilli()),
         )
         settings.recordCost(cost)
+        agentLog.append("── reply: ${text.replace('\n', ' ').take(200)}")
         return text
     }
 
