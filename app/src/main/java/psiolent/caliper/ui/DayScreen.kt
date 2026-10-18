@@ -114,10 +114,21 @@ fun DayScreen(container: AppContainer) {
 @Composable
 private fun EntryRow(entry: LogEntryEntity) {
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(entry.label)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            Text(entry.label, modifier = Modifier.weight(1f))
             val kcal = entry.nutrients[Nutrient.KCAL]
-            Text(if (kcal != null) "${round(kcal)} kcal" else "")
+            if (kcal != null) {
+                Text(
+                    "${round(kcal)} kcal",
+                    maxLines = 1,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 12.dp),
+                )
+            }
         }
         val detail = buildString {
             append("${round(entry.amount)} ${entry.unit} \u00b7 ${round(entry.grams)} g")

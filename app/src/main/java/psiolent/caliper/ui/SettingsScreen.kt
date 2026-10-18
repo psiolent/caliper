@@ -23,6 +23,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -46,6 +48,7 @@ fun SettingsScreen(container: AppContainer) {
     var usdaKey by rememberSaveable { mutableStateOf(settings.usdaApiKey) }
     var models by remember { mutableStateOf<List<ModelInfo>>(emptyList()) }
     var status by remember { mutableStateOf<String?>(null) }
+    var revealKeys by rememberSaveable { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) scope.launch {
@@ -82,6 +85,8 @@ fun SettingsScreen(container: AppContainer) {
             label = { Text("OpenRouter API key") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
+            visualTransformation = if (revealKeys) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = { TextButton(onClick = { revealKeys = !revealKeys }) { Text(if (revealKeys) "Hide" else "Show") } },
         )
         OutlinedTextField(
             value = chatModel,
@@ -103,6 +108,7 @@ fun SettingsScreen(container: AppContainer) {
             label = { Text("USDA FoodData Central key (optional)") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
+            visualTransformation = if (revealKeys) VisualTransformation.None else PasswordVisualTransformation(),
         )
 
         Button(onClick = {
