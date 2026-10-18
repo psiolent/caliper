@@ -53,14 +53,29 @@ own scrollable, searchable view rather than being inlined.
 
 `ui/SettingsScreen.kt`.
 
-## 6. What happens if you navigate away mid-turn?
+## 6. A turn and leaving the screen (tested; one design question left)
 
-Unverified. The user asks whether a turn keeps running if they switch to the Day view
-while the agent is working, or whether it is interrupted. The turn runs in the chat
-view model's `viewModelScope`, so leaving the Chat screen should not cancel it — but
-this has not been tested and should be.
+Tested on the phone, so this part is answered:
 
-`ui/ChatViewModel.kt`.
+- **Switching tabs** while a turn runs: the turn continues and the reply arrives. The
+  chat view model belongs to the Activity, not the tab.
+- **Home / backgrounding**: the turn continues too.
+- **Back out of the app** (or swipe it away): the Activity is destroyed, the turn is
+  cancelled, and only the user's message remains.
+
+Fixed along the way: a cancelled turn used to write "I couldn't reach the model: Job
+was cancelled" into the transcript — a lie, since nothing was wrong with the model. A
+cancellation is now left to propagate instead of being reported as a failure.
+
+Open design question: **should a turn outlive the app?** It cannot today without an
+application-scoped worker, and surviving doze needs a foreground service. Note that it
+would only be *useful* together with resuming the last session, because the app starts
+a fresh session on every launch — a reply that landed after you left would sit in a
+session you are no longer looking at. Worth deciding as one question, not two.
+
+Related: a turn that ran while the screen was off failed once with "Unable to resolve
+host openrouter.ai" — the phone suspends the network in low-power states. Another
+argument for a foreground service if long turns matter.
 
 ## 7. The chat does not scroll to a new message
 

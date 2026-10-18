@@ -12,6 +12,11 @@ round trips and a confusing trail. Separately, the model invented a meal time of
 `16:00` at 14:55, and a `delete: "yes"` flag would have been read as `false`, quietly
 turning a delete into an edit. Each of those looked like it worked.
 
+The same failure showed up once more, quietly: the model passed a *date* as a meal's
+`at` (`"2026-10-18"`), and the parser read it as midnight, so a meal eaten at 15:38 was
+stamped 00:00. A date is a missing time of day, not a time, so it is now refused like
+anything else that cannot be read.
+
 **Consequence.** Retries cost a round trip, but they are self-correcting and visible;
 a silent default costs the same round trip through a failed downstream step, and hides
 the cause. Only complain where the value is actually needed — a redundant `per_100g`

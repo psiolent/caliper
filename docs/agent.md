@@ -70,7 +70,10 @@ the same turn. This is a deliberate posture, not an accident of implementation â
   objects, or the equivalent map); a stringified one is refused.
 - An unknown nutrient key is reported in the save result rather than dropped.
 - A time in the future is refused: nobody has eaten yet.
-- `parseWhen` and the shape readers are top-level and unit-tested (`ToolArgsTest`).
+- A bare date is not a time: `"2026-10-18"` is refused, because reading it as midnight
+  stamped a meal at 00:00 that was eaten in the afternoon.
+- `parseWhen` and the shape readers are top-level and unit-tested (`ToolArgsTest`,
+  `WhenParsingTest`).
 
 ## Model slots
 

@@ -278,7 +278,8 @@ class ToolExecutor(
     private companion object {
         val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
         const val WHEN_MESSAGE =
-            "'at' could not be read as a time. Use a local date-time like 2026-10-18T07:00, or a time like 07:00."
+            "'at' must be a time of day like 07:00, or a date and time like 2026-10-18T07:00. " +
+                "A bare date has no time of day — omit 'at' to use the current time."
         const val SERVINGS_ERROR =
             "Error: servings must be a list of {\"name\": \"cup\", \"grams\": 80} objects, or a map of name to grams — not a string."
         const val INGREDIENTS_ERROR =
@@ -569,12 +570,15 @@ class ToolExecutor(
 /**
  * Read a time a model sent. A bare time is taken as today. Null means it could not
  * be read at all, which the caller must report rather than papering over with "now".
+ *
+ * A bare *date* is deliberately not read: "2026-10-18" has no time of day, and taking
+ * it as midnight stamped a meal at 00:00 that was eaten in the afternoon. A date alone
+ * is a missing time, so it comes back as unreadable and the agent supplies one.
  */
 internal fun parseWhen(raw: String, zone: ZoneId, today: LocalDate = LocalDate.now(zone)): Instant? {
     val text = raw.trim()
     runCatching { return Instant.parse(text) }
     runCatching { return LocalDateTime.parse(text).atZone(zone).toInstant() }
-    runCatching { return LocalDate.parse(text).atStartOfDay(zone).toInstant() }
     runCatching { return LocalTime.parse(text).atDate(today).atZone(zone).toInstant() }
     return null
 }

@@ -1,5 +1,6 @@
 package psiolent.caliper.agent
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import psiolent.caliper.data.CaliperRepository
 import psiolent.caliper.data.MessageEntity
@@ -95,6 +96,11 @@ class AgentRunner(
                     "Ask me to continue and I'll pick up where I left off.",
                 cost,
             )
+        } catch (e: CancellationException) {
+            // The turn was abandoned, not broken: the app was closed before it could
+            // finish. Reporting that as a model failure wrote "I couldn't reach the
+            // model: Job was cancelled" into the transcript, which was not true.
+            throw e
         } catch (e: Exception) {
             // A model or network failure must never take the app down, and the key
             // must never end up in an error string.

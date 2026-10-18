@@ -38,4 +38,11 @@ class WhenParsingTest {
         assertNull(parseWhen("this morning", zone, today))
         assertNull(parseWhen("", zone, today))
     }
+
+    @Test
+    fun `a bare date is not a time, rather than being read as midnight`() {
+        // A date alone is a missing time of day. Reading it as 00:00 stamped a meal
+        // at midnight that was eaten in the afternoon.
+        assertNull(parseWhen("2026-10-18", zone, today))
+    }
 }
