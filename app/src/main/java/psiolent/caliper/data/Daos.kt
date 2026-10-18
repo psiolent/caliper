@@ -90,6 +90,9 @@ interface MealDao {
 
     @Upsert
     suspend fun upsert(meal: MealEntity)
+
+    @Query("DELETE FROM meals WHERE id = :id")
+    suspend fun delete(id: String)
 }
 
 @Dao
@@ -108,6 +111,9 @@ interface LogDao {
 
     @Query("SELECT * FROM log_entries WHERE targetType = 'BATCH' AND targetId = :batchId")
     suspend fun forBatch(batchId: String): List<LogEntryEntity>
+
+    @Query("DELETE FROM log_entries WHERE mealId = :mealId")
+    suspend fun deleteForMeal(mealId: String)
 
     @Upsert
     suspend fun upsert(entry: LogEntryEntity)

@@ -35,7 +35,7 @@ import java.util.UUID
 object ToolSchema {
 
     fun all(): List<JsonObject> = listOf(
-        findFood, recentBatches, getLog, saveFood, startMeal, logIntake, saveRecipe, updateRecipe, makeBatch, reviseEntry, updateProfile,
+        findFood, recentBatches, getLog, saveFood, startMeal, logIntake, saveRecipe, updateRecipe, makeBatch, reviseEntry, updateProfile, deleteMeal,
     )
 
     private val nutrientKeys = Nutrient.entries.joinToString(", ") { it.name.lowercase() }
@@ -68,7 +68,10 @@ object ToolSchema {
             "Nutrient keys: $nutrientKeys.",
         properties = obj(
             "name" to stringParam("Food name."),
-            "per_100g" to objectParam("Map of nutrient key to value per 100 g."),
+            "per_100g" to objectParam(
+                "Object of nutrient key to value per 100 g, e.g. {\"kcal\": 143, \"protein\": 12.6}. " +
+                    "Omit it entirely when you pass an fdc_id — the app copies the panel from USDA.",
+            ),
             "brand" to stringParam("Brand, if any."),
             "estimated" to arrayParam("Nutrient keys whose values are estimates.", stringParam("Nutrient key.")),
             "servings" to arrayParam(
@@ -95,6 +98,14 @@ object ToolSchema {
             "at" to stringParam("When the meal happened, if the user said. A time like 07:00 means today."),
         ),
         required = listOf("label"),
+    )
+
+    private val deleteMeal = function(
+        name = "delete_meal",
+        description = "Remove a meal and every item logged for it. Use this when the user asks to " +
+            "delete a meal; deleting its items one by one leaves the empty meal behind.",
+        properties = obj("meal_id" to stringParam("The meal to remove.")),
+        required = listOf("meal_id"),
     )
 
     private val logIntake = function(
@@ -253,10 +264,13 @@ class ToolExecutor(
 
     private companion object {
         const val TAG = "Caliper"
-        val NUMBER = Regex("""-?\d+(\.\d+)?""")
         val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
         const val WHEN_ERROR =
             "Error: 'at' could not be read as a time. Use a local date-time like 2026-10-18T07:00, or a time like 07:00."
+        const val SERVINGS_ERROR =
+            "Error: servings must be a list of {\"name\": \"cup\", \"grams\": 80} objects, or a map of name to grams — not a string."
+        const val INGREDIENTS_ERROR =
+            "Error: ingredients must be a list of {\"food_id\": \"...\", \"amount\": 1, \"unit\": \"cup\"} objects."
     }
 
     private fun clock(epochMillis: Long): String =
@@ -271,6 +285,7 @@ class ToolExecutor(
             "get_log" -> getLog(args)
             "save_food" -> saveFood(args)
             "start_meal" -> startMeal(args)
+            "delete_meal" -> deleteMeal(args)
             "log" -> logIntake(args)
             "save_recipe" -> saveRecipe(args)
             "update_recipe" -> updateRecipe(args)
@@ -321,14 +336,20 @@ class ToolExecutor(
         val existing = args.string("food_id")?.let { repo.food(it) }
         val fdcId = args.number("fdc_id")?.toInt()
         val fromUsda = if (fdcId == null) null else usda.byId(fdcId) ?: return "Error: no USDA food with id $fdcId"
-        val provided = args["per_100g"] as? JsonObject
-        val panel = fromUsda?.per100g ?: provided?.let(::buildNutrients)
+        val per100gRaw = args["per_100g"]
+        val per100g = per100gRaw as? JsonObject
+        // Only complain when the value is actually needed; with an fdc_id it is redundant.
+        if (fromUsda == null && per100gRaw != null && per100g == null) {
+            return "Error: per_100g must be an object of nutrient keys to values ({\"kcal\": 143}), not a string."
+        }
+        val panel = fromUsda?.per100g ?: per100g?.let(::buildNutrients)
             ?: return "Error: provide per_100g, or an fdc_id to copy the panel from USDA"
         if (panel.amounts.isEmpty()) {
-            val keys = provided?.keys?.joinToString(", ").orEmpty()
+            val keys = per100g?.keys?.joinToString(", ").orEmpty()
             return "Error: no recognised nutrient keys in per_100g (got: $keys). " +
                 "Use keys like kcal, protein, fat, saturated_fat, carbs, fiber, sugars, sodium, cholesterol."
         }
+        val servings = args.servings() ?: return SERVINGS_ERROR
 
         val food = FoodEntity(
             id = existing?.id ?: UUID.randomUUID().toString(),
@@ -336,7 +357,7 @@ class ToolExecutor(
             brand = args.string("brand") ?: fromUsda?.brand ?: existing?.brand,
             per100g = panel,
             estimated = args.stringSet("estimated"),
-            servings = args.servings().ifEmpty { fromUsda?.servings ?: emptyList() },
+            servings = servings.ifEmpty { fromUsda?.servings ?: emptyList() },
             source = if (fromUsda != null) {
                 FoodSource.USDA
             } else {
@@ -377,20 +398,23 @@ class ToolExecutor(
 
     private suspend fun saveRecipe(args: JsonObject): String {
         val name = args.string("name") ?: return "Error: name is required"
-        val ingredients = args.ingredients() ?: return "Error: ingredients is required"
+        val ingredients = args.ingredients() ?: return INGREDIENTS_ERROR
+        val servings = args.servings() ?: return SERVINGS_ERROR
         val yield = args.number("yield_grams") ?: return "Error: yield_grams is required"
-        val recipe = repo.saveRecipe(name, ingredients, yield, args.servings())
+        val recipe = repo.saveRecipe(name, ingredients, yield, servings)
         return "Saved recipe id=${recipe.id} name=\"${recipe.name}\"."
     }
 
     private suspend fun updateRecipe(args: JsonObject): String {
         val id = args.string("recipe_id") ?: return "Error: recipe_id is required"
+        val ingredients = if (args.containsKey("ingredients")) args.ingredients() ?: return INGREDIENTS_ERROR else null
+        val servings = if (args.containsKey("servings")) args.servings() ?: return SERVINGS_ERROR else null
         val recipe = repo.updateRecipe(
             id = id,
             name = args.string("name"),
-            ingredients = args.ingredients(),
+            ingredients = ingredients,
             yieldGrams = args.number("yield_grams"),
-            servings = if (args.containsKey("servings")) args.servings() else null,
+            servings = servings,
         )
         return "Updated recipe id=${recipe.id} name=\"${recipe.name}\"."
     }
@@ -419,6 +443,13 @@ class ToolExecutor(
         return "Revised entry $id."
     }
 
+    private suspend fun deleteMeal(args: JsonObject): String {
+        val mealId = args.string("meal_id") ?: return "Error: meal_id is required"
+        val meal = repo.meal(mealId) ?: return "Error: no meal with id $mealId"
+        repo.deleteMeal(mealId)
+        return "Deleted meal \"${meal.label}\" and its items."
+    }
+
     private suspend fun updateProfile(args: JsonObject): String {
         val text = args.string("text") ?: return "Error: text is required"
         repo.saveProfile(text)
@@ -429,10 +460,6 @@ class ToolExecutor(
 
     private fun args(raw: String): JsonObject =
         if (raw.isBlank()) JsonObject(emptyMap()) else json.parseToJsonElement(raw) as? JsonObject ?: JsonObject(emptyMap())
-
-    private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
-
-    private fun JsonObject.number(key: String): Double? = (this[key] as? JsonPrimitive)?.content?.toDoubleOrNull()
 
     private fun JsonObject.boolean(key: String): Boolean? = (this[key] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
 
@@ -449,46 +476,13 @@ class ToolExecutor(
      */
     private fun parseWhen(raw: String): Instant? = parseWhen(raw, ZoneId.systemDefault())
 
-    private fun JsonObject.servings(): List<Serving> {
-        // The documented shape is a list of {name, grams}; models also send the
-        // equivalent {name: grams} map, so both are read rather than half-silently
-        // dropping the servings.
-        return when (val raw = this["servings"]) {
-            is JsonArray -> raw.mapNotNull { element ->
-                val row = element as? JsonObject ?: return@mapNotNull null
-                val name = row.string("name") ?: return@mapNotNull null
-                val grams = row.number("grams") ?: return@mapNotNull null
-                Serving(name, grams)
-            }
-            is JsonObject -> raw.entries.mapNotNull { (name, grams) ->
-                (grams as? JsonPrimitive)?.toAmount()?.let { Serving(name, it) }
-            }
-            else -> emptyList()
-        }
-    }
-
-    private fun JsonObject.ingredients(): List<Ingredient>? =
-        (this["ingredients"] as? JsonArray)?.mapNotNull { element ->
-            val row = element as? JsonObject ?: return@mapNotNull null
-            val foodId = row.string("food_id") ?: return@mapNotNull null
-            val amount = row.number("amount") ?: return@mapNotNull null
-            val unit = row.string("unit") ?: return@mapNotNull null
-            Ingredient(foodId, amount, unit)
-        }
-
     private fun buildNutrients(panel: JsonObject): Nutrients = Nutrients(
         panel.entries.mapNotNull { (key, value) ->
             val nutrient = nutrientByKey(key) ?: return@mapNotNull null
-            val amount = (value as? JsonPrimitive)?.toAmount() ?: return@mapNotNull null
+            val amount = (value as? JsonPrimitive)?.amountOrNull() ?: return@mapNotNull null
             nutrient to amount
         }.toMap(),
     )
-
-    /** Accept a plain number, or a string like "144 kcal" or "15 g". */
-    private fun JsonPrimitive.toAmount(): Double? {
-        val raw = content.trim()
-        return raw.toDoubleOrNull() ?: NUMBER.find(raw)?.value?.toDoubleOrNull()
-    }
 
     // --- display helpers ---------------------------------------------------
 
@@ -545,4 +539,49 @@ internal fun parseWhen(raw: String, zone: ZoneId, today: LocalDate = LocalDate.n
     runCatching { return LocalDate.parse(text).atStartOfDay(zone).toInstant() }
     runCatching { return LocalTime.parse(text).atDate(today).atZone(zone).toInstant() }
     return null
+}
+
+private val NUMBER = Regex("""-?\d+(\.\d+)?""")
+
+internal fun JsonObject.string(key: String): String? =
+    (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+internal fun JsonObject.number(key: String): Double? =
+    (this[key] as? JsonPrimitive)?.content?.toDoubleOrNull()
+
+/** Accept a plain number, or a string like "144 kcal" or "15 g". */
+internal fun JsonPrimitive.amountOrNull(): Double? {
+    val raw = content.trim()
+    return raw.toDoubleOrNull() ?: NUMBER.find(raw)?.value?.toDoubleOrNull()
+}
+
+/**
+ * The documented shape is a list of {name, grams}; models also send the equivalent
+ * {name: grams} map. Anything else — including a JSON string of either — is a contract
+ * violation, returned as null so the caller can say so rather than drop it silently.
+ */
+internal fun JsonObject.servings(): List<Serving>? = when (val raw = this["servings"]) {
+    null -> emptyList()
+    is JsonArray -> raw.map { element ->
+        val row = element as? JsonObject ?: return null
+        val name = row.string("name") ?: return null
+        val grams = row.number("grams") ?: return null
+        Serving(name, grams)
+    }
+    is JsonObject -> raw.entries.map { (name, grams) ->
+        Serving(name, (grams as? JsonPrimitive)?.amountOrNull() ?: return null)
+    }
+    else -> null
+}
+
+/** Null when absent or malformed; callers that allow absence check for the key first. */
+internal fun JsonObject.ingredients(): List<Ingredient>? {
+    val rows = this["ingredients"] as? JsonArray ?: return null
+    return rows.map { element ->
+        val row = element as? JsonObject ?: return null
+        val foodId = row.string("food_id") ?: return null
+        val amount = row.number("amount") ?: return null
+        val unit = row.string("unit") ?: return null
+        Ingredient(foodId, amount, unit)
+    }
 }

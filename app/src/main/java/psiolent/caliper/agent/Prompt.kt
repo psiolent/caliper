@@ -40,6 +40,8 @@ object Prompt {
           unless they say otherwise. Call start_meal once for that meal, then log every item
           against the meal_id it returns. If the user says something was a separate meal,
           start another one.
+        - To remove a meal, use delete_meal. Deleting its items one at a time leaves the
+          meal itself behind, and the user will still see it.
         - Name a meal with the user's own word when they used one ("lunch"), otherwise a short
           description of what was eaten ("Toast and eggs"). Never a bare time-of-day guess.
         - Assume the current time for a meal unless the user says when; pass that as `at` on

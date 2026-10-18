@@ -128,6 +128,12 @@ class CaliperRepository(private val db: CaliperDatabase) {
 
     suspend fun meal(id: String): MealEntity? = meals.byId(id)
 
+    /** Remove a meal and everything logged for it. */
+    suspend fun deleteMeal(id: String) {
+        logs.deleteForMeal(id)
+        meals.delete(id)
+    }
+
     /** Replace an entry's amount, unit, and time. The caller supplies complete values. */
     suspend fun reviseEntry(id: String, amount: Double, unit: String, at: Instant? = null) {
         val existing = logs.byId(id) ?: throw IllegalArgumentException("No log entry with id $id")

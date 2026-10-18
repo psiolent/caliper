@@ -64,7 +64,8 @@ fun DayScreen(container: AppContainer) {
     }
 
     val totals = day?.totals ?: Nutrients.EMPTY
-    val meals = day?.meals.orEmpty()
+    // A meal can exist before anything is logged to it; an empty one is not worth showing.
+    val meals = day?.meals.orEmpty().filter { it.entries.isNotEmpty() }
 
     Column(Modifier.fillMaxSize()) {
         Row(
