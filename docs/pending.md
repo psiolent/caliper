@@ -61,15 +61,6 @@ something the user can act on, rather than spending the budget.
 
 `agent/AgentRunner.kt`.
 
-## 5. Deleting a food that a recipe uses leaves the recipe uncomputable
-
-`deleteFood` removes the row. A recipe naming it then cannot be logged — `logRecipe`
-fails with "No food with id" — and the Library shows it as "nutrition unavailable"
-rather than explaining why. The agent gets a loud error, so nothing is wrong silently,
-but the user has no way out except deleting the recipe.
-
-Either refuse to delete a food a recipe uses, or make the message name the recipe.
-
 ## Known friction, deliberately left alone
 
 - **Serving names match exactly.** The model logged "1 banana" as unit `banana` against

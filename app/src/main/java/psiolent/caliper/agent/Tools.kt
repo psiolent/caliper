@@ -344,7 +344,7 @@ class ToolExecutor(
     private suspend fun describeRecipe(recipe: RecipeEntity): String {
         val ingredients = recipe.ingredients
             .map { ingredient ->
-                val name = repo.food(ingredient.foodId)?.name ?: ingredient.foodId
+                val name = repo.food(ingredient.foodId)?.name ?: "(missing food)"
                 "${ingredient.amount.toInt()} ${ingredient.unit} $name"
             }
             .joinToString(", ")
@@ -431,9 +431,19 @@ class ToolExecutor(
         val amount = args.number("amount") ?: return "Error: amount is required"
         val unit = args.string("unit") ?: return "Error: unit is required"
 
+        val recipe = repo.recipe(targetId)
         val entry = when {
             repo.food(targetId) != null -> repo.logFood(targetId, amount, unit, mealId)
-            repo.recipe(targetId) != null -> repo.logRecipe(targetId, amount, unit, mealId)
+            recipe != null -> {
+                // A recipe whose food has been deleted still exists but cannot be worked
+                // out. Say which recipe and what fixes it, rather than failing on a food
+                // id the agent never mentioned.
+                if (repo.recipePanel(recipe) == null) {
+                    return "Error: the recipe \"${recipe.name}\" cannot be worked out because a food it " +
+                        "uses no longer exists. Replace that ingredient with update_recipe, then log it."
+                }
+                repo.logRecipe(targetId, amount, unit, mealId)
+            }
             else -> return "Error: no food or recipe with id $targetId. " +
                 "Use find_food for a food, or recipes for a recipe you defined."
         }

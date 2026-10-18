@@ -50,6 +50,9 @@ class CaliperRepository(private val db: CaliperDatabase) {
     suspend fun foodByNameAndBrand(name: String, brand: String?): FoodEntity? = foods.byNameAndBrand(name, brand)
     suspend fun entry(id: String): LogEntryEntity? = logs.byId(id)
 
+    /** How many logged items point at this food or recipe. */
+    suspend fun entriesUsing(targetId: String): Int = logs.countByTarget(targetId)
+
     fun observeFoods(): Flow<List<FoodEntity>> = foods.observeAll()
     fun observeRecipes(): Flow<List<RecipeEntity>> = recipes.observeAll()
 

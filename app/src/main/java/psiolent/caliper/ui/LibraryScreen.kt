@@ -12,10 +12,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +37,14 @@ import psiolent.caliper.data.RecipeEntity
 import psiolent.caliper.data.portions
 import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
+import psiolent.caliper.domain.resolveGrams
+
+/** A delete that is about to happen, and what it will break if it does. */
+private data class DeleteWarning(
+    val title: String,
+    val lines: List<String>,
+    val perform: () -> Unit,
+)
 
 /**
  * Read-only views of everything the agent has recorded, with delete. This is the user's
@@ -42,9 +52,9 @@ import psiolent.caliper.domain.Nutrients
  * finding a thing: search at the top, two sections, and every row opening on a tap to
  * show what it holds.
  *
- * Delete lives inside that opened row rather than beside it. Removing a food or recipe
- * cannot be undone, and a Delete button on every row made the list hard to read and easy
- * to hit by accident.
+ * Delete lives inside that opened row rather than beside it, and asks before it acts.
+ * Removing a food cannot be undone, and a food other things point at is worse than one
+ * that is merely gone.
  */
 @Composable
 fun LibraryScreen(container: AppContainer) {
@@ -53,10 +63,30 @@ fun LibraryScreen(container: AppContainer) {
     val foods by repo.observeFoods().collectAsStateWithLifecycle(initialValue = emptyList())
     val recipes by repo.observeRecipes().collectAsStateWithLifecycle(initialValue = emptyList())
 
-    // The same breakdown sheet the day view uses, here for a food or a recipe.
+    // The same breakdown sheet the day view uses, here for a food or a recipe. The sheet
+    // shows delete for whichever row opened it, so the row leaves its action behind.
     var breakdown by remember { mutableStateOf<BreakdownRequest?>(null) }
-    var pendingDelete by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var requestDelete by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var confirmDelete by remember { mutableStateOf<DeleteWarning?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
+
+    /** Ask before deleting, naming whatever else points at this food or recipe. */
+    fun askToDelete(name: String, food: FoodEntity? = null, recipe: RecipeEntity? = null) {
+        breakdown = null
+        scope.launch {
+            val users = if (food != null) recipes.filter { it.uses(food.id) } else emptyList()
+            val entries = repo.entriesUsing(food?.id ?: recipe?.id ?: "")
+            confirmDelete = DeleteWarning(
+                title = "Delete $name?",
+                lines = deletionLines(entries, users),
+                perform = {
+                    scope.launch {
+                        if (food != null) repo.deleteFood(food) else recipe?.let { repo.deleteRecipe(it) }
+                    }
+                },
+            )
+        }
+    }
 
     val shownRecipes = recipes.filter { it.name.matches(query) }
     val shownFoods = foods.filter { it.name.matches(query) || it.brand.orEmpty().matches(query) }
@@ -97,10 +127,7 @@ fun LibraryScreen(container: AppContainer) {
                         kcal = panel?.get(Nutrient.KCAL),
                         onClick = {
                             breakdown = recipeBreakdown(recipe, panel, foods)
-                            pendingDelete = {
-                                breakdown = null
-                                scope.launch { repo.deleteRecipe(recipe) }
-                            }
+                            requestDelete = { askToDelete(recipe.name, recipe = recipe) }
                         },
                     )
                 }
@@ -120,10 +147,7 @@ fun LibraryScreen(container: AppContainer) {
                                 subtitle = food.per100g[Nutrient.KCAL]?.let { "${round(it)} kcal per 100 g" }
                                     ?: "per 100 g",
                             )
-                            pendingDelete = {
-                                breakdown = null
-                                scope.launch { repo.deleteFood(food) }
-                            }
+                            requestDelete = { askToDelete(food.name, food = food) }
                         },
                     )
                 }
@@ -136,10 +160,62 @@ fun LibraryScreen(container: AppContainer) {
             request = request,
             onDismiss = {
                 breakdown = null
-                pendingDelete = null
+                requestDelete = null
             },
-            onDelete = pendingDelete,
+            onDelete = requestDelete,
         )
+    }
+
+    confirmDelete?.let { warning ->
+        AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text(warning.title) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    warning.lines.forEach { Text(it) }
+                    Text("This cannot be undone.")
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        warning.perform()
+                        confirmDelete = null
+                    },
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = null }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+/**
+ * What a delete will cost, in the terms that matter: a recipe that can no longer be
+ * worked out, and logged items that keep their values but stop being adjustable.
+ */
+private fun deletionLines(entries: Int, recipes: List<RecipeEntity>): List<String> = buildList {
+    if (recipes.isNotEmpty()) {
+        val verb = if (recipes.size == 1) "uses" else "use"
+        add(
+            "${counted(recipes.size, "recipe")} $verb this and cannot be worked out afterwards: " +
+                recipes.joinToString(", ") { it.name } + ".",
+        )
+    }
+    if (entries > 0) {
+        add(
+            if (entries == 1) {
+                "1 logged item uses it. It keeps its value, but can no longer be adjusted."
+            } else {
+                "$entries logged items use it. They keep their values, but can no longer be adjusted."
+            },
+        )
+    }
+    if (recipes.isEmpty() && entries == 0) {
+        add("Nothing else uses it.")
     }
 }
 
@@ -203,6 +279,8 @@ private fun recipeDetail(recipe: RecipeEntity, panel: Nutrients?): String = list
 private fun counted(n: Int, singular: String, plural: String = "${singular}s"): String =
     "$n ${if (n == 1) singular else plural}"
 
+private fun RecipeEntity.uses(foodId: String): Boolean = ingredients.any { it.foodId == foodId }
+
 /**
  * A recipe has no stored panel, so one is worked out from the foods it names. A food
  * that has since been deleted makes that impossible; the recipe still opens, showing its
@@ -210,13 +288,11 @@ private fun counted(n: Int, singular: String, plural: String = "${singular}s"): 
  */
 private fun recipePanelOf(recipe: RecipeEntity, foods: List<FoodEntity>): Nutrients? {
     val byId = foods.associateBy { it.id }
-    if (recipe.ingredients.any { it.foodId !in byId }) return null
     if (recipe.yieldGrams <= 0.0) return null
     var total = Nutrients.EMPTY
     recipe.ingredients.forEach { ingredient ->
         val food = byId[ingredient.foodId] ?: return null
-        val grams = psiolent.caliper.domain.resolveGrams(ingredient.amount, ingredient.unit, food.servings)
-            ?: return null
+        val grams = resolveGrams(ingredient.amount, ingredient.unit, food.servings) ?: return null
         total += food.per100g.forGrams(grams)
     }
     return total.times(100.0 / recipe.yieldGrams)

@@ -89,6 +89,10 @@ interface LogDao {
     @Query("SELECT * FROM log_entries WHERE id = :id")
     suspend fun byId(id: String): LogEntryEntity?
 
+    /** How many logged items point at a food or recipe, to warn before deleting one. */
+    @Query("SELECT COUNT(*) FROM log_entries WHERE targetId = :targetId")
+    suspend fun countByTarget(targetId: String): Int
+
     @Query("DELETE FROM log_entries WHERE mealId = :mealId")
     suspend fun deleteForMeal(mealId: String)
 
