@@ -23,6 +23,9 @@ import psiolent.caliper.integrations.UsdaClient
 import psiolent.caliper.integrations.UsdaFood
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
 import java.util.UUID
 
 /**
@@ -69,7 +72,7 @@ object ToolSchema {
             "brand" to stringParam("Brand, if any."),
             "estimated" to arrayParam("Nutrient keys whose values are estimates.", stringParam("Nutrient key.")),
             "servings" to arrayParam(
-                "Named portions and their weight in grams, e.g. a cup of oats.",
+                "Named portions and their weight in grams, e.g. a cup of oats. A map of name to grams is also accepted.",
                 obj("name" to stringParam("Portion name, e.g. cup."), "grams" to numberParam("Weight in grams.")),
             ),
             "source" to enumParam("Where the panel came from.", "LABEL", "USDA", "WEB", "ESTIMATE"),
@@ -89,7 +92,7 @@ object ToolSchema {
             "amount" to numberParam("How much was eaten."),
             "unit" to stringParam("Unit, e.g. g, oz, cup, slice."),
             "meal" to enumParam("Only if the user named a meal. Omit otherwise.", "BREAKFAST", "LUNCH", "DINNER", "SNACK"),
-            "at" to stringParam("Optional ISO-8601 timestamp; defaults to now."),
+            "at" to stringParam("When it was eaten, if the user said. A local date-time like 2026-10-18T07:00 or a time like 07:00 means today."),
         ),
         required = listOf("target_id", "amount", "unit"),
     )
@@ -160,6 +163,7 @@ object ToolSchema {
             "amount" to numberParam("New amount."),
             "unit" to stringParam("New unit."),
             "meal" to enumParam("New meal label.", "BREAKFAST", "LUNCH", "DINNER", "SNACK"),
+            "at" to stringParam("New time, if the original was wrong."),
             "delete" to boolParam("Set true to remove the entry."),
         ),
         required = listOf("entry_id"),
@@ -237,6 +241,8 @@ class ToolExecutor(
     private companion object {
         const val TAG = "Caliper"
         val NUMBER = Regex("""-?\d+(\.\d+)?""")
+        const val WHEN_ERROR =
+            "Error: 'at' could not be read as a time. Use a local date-time like 2026-10-18T07:00, or a time like 07:00."
     }
 
     suspend fun execute(name: String, arguments: String): String = try {
@@ -328,7 +334,7 @@ class ToolExecutor(
         val amount = args.number("amount") ?: return "Error: amount is required"
         val unit = args.string("unit") ?: return "Error: unit is required"
         val meal = args.string("meal")?.let { raw -> Meal.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } }
-        val at = args.string("at")?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: Instant.now()
+        val at = args.string("at")?.let { parseWhen(it) ?: return WHEN_ERROR } ?: Instant.now()
 
         val entry = when {
             repo.food(targetId) != null -> repo.logFood(targetId, amount, unit, meal, at)
@@ -360,7 +366,7 @@ class ToolExecutor(
 
     private suspend fun makeBatch(args: JsonObject): String {
         val recipeId = args.string("recipe_id") ?: return "Error: recipe_id is required"
-        val at = args.string("at")?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: Instant.now()
+        val at = args.string("at")?.let { parseWhen(it) ?: return WHEN_ERROR } ?: Instant.now()
         val batch = repo.makeBatch(recipeId, args.string("name"), at)
         return "Made batch id=${batch.id} name=\"${batch.name}\" total=${batch.totalGrams.toInt()} g."
     }
@@ -377,11 +383,13 @@ class ToolExecutor(
         } else {
             existing.meal
         }
+        val at = args.string("at")?.let { parseWhen(it) ?: return WHEN_ERROR }
         repo.reviseEntry(
             id = id,
             amount = args.number("amount") ?: existing.amount,
             unit = args.string("unit") ?: existing.unit,
             meal = meal,
+            at = at,
         )
         return "Revised entry $id."
     }
@@ -409,13 +417,30 @@ class ToolExecutor(
             ?.toSet()
             ?: emptySet()
 
-    private fun JsonObject.servings(): List<Serving> =
-        (this["servings"] as? JsonArray)?.mapNotNull { element ->
-            val row = element as? JsonObject ?: return@mapNotNull null
-            val name = row.string("name") ?: return@mapNotNull null
-            val grams = row.number("grams") ?: return@mapNotNull null
-            Serving(name, grams)
-        } ?: emptyList()
+    /**
+     * Accept the shapes a model actually produces for a time: a full instant, a
+     * local date-time, a bare date, or a bare time today. Returns null rather than
+     * quietly substituting "now", so a bad time is surfaced instead of hidden.
+     */
+    private fun parseWhen(raw: String): Instant? = parseWhen(raw, ZoneId.systemDefault())
+
+    private fun JsonObject.servings(): List<Serving> {
+        // The documented shape is a list of {name, grams}; models also send the
+        // equivalent {name: grams} map, so both are read rather than half-silently
+        // dropping the servings.
+        return when (val raw = this["servings"]) {
+            is JsonArray -> raw.mapNotNull { element ->
+                val row = element as? JsonObject ?: return@mapNotNull null
+                val name = row.string("name") ?: return@mapNotNull null
+                val grams = row.number("grams") ?: return@mapNotNull null
+                Serving(name, grams)
+            }
+            is JsonObject -> raw.entries.mapNotNull { (name, grams) ->
+                (grams as? JsonPrimitive)?.toAmount()?.let { Serving(name, it) }
+            }
+            else -> emptyList()
+        }
+    }
 
     private fun JsonObject.ingredients(): List<Ingredient>? =
         (this["ingredients"] as? JsonArray)?.mapNotNull { element ->
@@ -483,4 +508,17 @@ class ToolExecutor(
         nutrients.amounts.entries.joinToString(", ") { (nutrient, value) ->
             if (includeUnits) "${nutrient.name.lowercase()}=${value.toInt()}${nutrient.unit}" else "${nutrient.name.lowercase()}=${value.toInt()}"
         }
+}
+
+/**
+ * Read a time a model sent. A bare time is taken as today. Null means it could not
+ * be read at all, which the caller must report rather than papering over with "now".
+ */
+internal fun parseWhen(raw: String, zone: ZoneId, today: LocalDate = LocalDate.now(zone)): Instant? {
+    val text = raw.trim()
+    runCatching { return Instant.parse(text) }
+    runCatching { return LocalDateTime.parse(text).atZone(zone).toInstant() }
+    runCatching { return LocalDate.parse(text).atStartOfDay(zone).toInstant() }
+    runCatching { return LocalTime.parse(text).atDate(today).atZone(zone).toInstant() }
+    return null
 }

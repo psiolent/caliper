@@ -120,9 +120,14 @@ private fun DayTotals(totals: Nutrients, burned: HealthConnect.Burned?, onConnec
 
         when (burned) {
             is HealthConnect.Burned.Value -> Text(
-                burned.kcal?.let {
-                    "burned ${round(it)} \u00b7 net ${round((totals[Nutrient.KCAL] ?: 0.0) - it)} kcal"
-                } ?: "No calories burned recorded for this day",
+                when {
+                    burned.totalKcal != null && burned.activeKcal != null ->
+                        "burned ${round(burned.totalKcal)} kcal total \u00b7 ${round(burned.activeKcal)} active"
+                    burned.totalKcal != null -> "burned ${round(burned.totalKcal)} kcal total"
+                    burned.activeKcal != null ->
+                        "burned ${round(burned.activeKcal)} kcal active (resting burn not recorded)"
+                    else -> "No calories burned recorded for this day"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

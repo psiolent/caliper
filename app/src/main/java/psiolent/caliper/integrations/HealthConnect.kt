@@ -38,8 +38,12 @@ object HealthConnect {
     sealed interface Burned {
         data object Unavailable : Burned
         data object NotGranted : Burned
-        /** Granted; [kcal] is null when nothing has been recorded for the day. */
-        data class Value(val kcal: Double?) : Burned
+
+        /**
+         * Granted. [totalKcal] includes the resting/basal burn; [activeKcal] is
+         * movement only. Either is null when nothing has been recorded.
+         */
+        data class Value(val totalKcal: Double?, val activeKcal: Double?) : Burned
     }
 
     suspend fun burned(context: Context, date: LocalDate): Burned {
@@ -50,13 +54,19 @@ object HealthConnect {
         val zone = ZoneId.systemDefault()
         val result = client.aggregate(
             AggregateRequest(
-                metrics = setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL),
+                metrics = setOf(
+                    TotalCaloriesBurnedRecord.ENERGY_TOTAL,
+                    ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL,
+                ),
                 timeRangeFilter = TimeRangeFilter.between(
                     date.atStartOfDay(zone).toInstant(),
                     date.plusDays(1).atStartOfDay(zone).toInstant(),
                 ),
             ),
         )
-        return Burned.Value(result[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories)
+        return Burned.Value(
+            totalKcal = result[TotalCaloriesBurnedRecord.ENERGY_TOTAL]?.inKilocalories,
+            activeKcal = result[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories,
+        )
     }
 }

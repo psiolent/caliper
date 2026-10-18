@@ -114,8 +114,8 @@ class CaliperRepository(private val db: CaliperDatabase) {
         return entry
     }
 
-    /** Replace an entry's amount, unit, and meal. The caller supplies complete values. */
-    suspend fun reviseEntry(id: String, amount: Double, unit: String, meal: Meal?) {
+    /** Replace an entry's amount, unit, meal, and time. The caller supplies complete values. */
+    suspend fun reviseEntry(id: String, amount: Double, unit: String, meal: Meal?, at: Instant? = null) {
         val existing = logs.byId(id) ?: throw IllegalArgumentException("No log entry with id $id")
         val (per100g, servings) = targetPanel(existing)
             ?: throw IllegalArgumentException(
@@ -124,7 +124,14 @@ class CaliperRepository(private val db: CaliperDatabase) {
         val grams = resolveGrams(amount, unit, servings)
             ?: throw IllegalArgumentException("Cannot express $amount $unit of \"${existing.label}\"")
         logs.upsert(
-            existing.copy(amount = amount, unit = unit, grams = grams, nutrients = per100g.forGrams(grams), meal = meal),
+            existing.copy(
+                amount = amount,
+                unit = unit,
+                grams = grams,
+                nutrients = per100g.forGrams(grams),
+                meal = meal,
+                at = at?.toEpochMilli() ?: existing.at,
+            ),
         )
     }
 
