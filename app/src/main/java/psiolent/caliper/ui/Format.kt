@@ -17,12 +17,9 @@ internal fun formatNutrient(nutrient: Nutrient, value: Double): String =
     if (nutrient == Nutrient.KCAL) "${round(value)}\u00a0kcal"
     else "${round(value)}\u00a0${nutrient.unit}\u00a0${nutrient.shortName}"
 
-/**
- * The same value the other way round: "saturated 19 g". A breakdown line reads as a
- * list of named parts, so the names come first and line up as you scan down.
- */
-internal fun formatNutrientNamed(nutrient: Nutrient, value: Double): String =
-    "${nutrient.shortName}\u00a0${round(value)}\u00a0${nutrient.unit}"
+/** Just the amount: "19 g", "872 mg". For a row whose name is already a column. */
+internal fun formatAmount(nutrient: Nutrient, value: Double): String =
+    "${round(value)}\u00a0${nutrient.unit}"
 
 private val SUMMARY_ORDER = listOf(
     Nutrient.KCAL,

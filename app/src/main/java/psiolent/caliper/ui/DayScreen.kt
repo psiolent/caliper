@@ -192,36 +192,49 @@ private fun DayTotals(totals: Nutrients, burned: HealthConnect.Burned?, onConnec
             MacroCard("carbs", totals[Nutrient.CARBS])
         }
 
-        DetailCard(
-            groups = listOf(
-                "Fat" to listOf(
-                    Nutrient.SATURATED_FAT,
-                    Nutrient.TRANS_FAT,
-                    Nutrient.MONOUNSATURATED_FAT,
-                    Nutrient.POLYUNSATURATED_FAT,
-                ),
-                "Carbs" to listOf(Nutrient.FIBER, Nutrient.SUGARS),
-                "Other" to listOf(Nutrient.SODIUM, Nutrient.CHOLESTEROL),
-            ),
-            totals = totals,
-        )
+        DetailCard(totals)
     }
 }
 
+private val FAT_PARTS = listOf(
+    Nutrient.SATURATED_FAT,
+    Nutrient.TRANS_FAT,
+    Nutrient.MONOUNSATURATED_FAT,
+    Nutrient.POLYUNSATURATED_FAT,
+)
+
+/** A gap smaller than this is rounding, not something missing. */
+private const val GAP_FLOOR = 1.0
+
+/** What a detail line is: the group's whole, one of its parts, or the unaccounted gap. */
+private enum class Emphasis { WHOLE, PART, GAP }
+
+private data class DetailLine(val name: String, val value: String, val emphasis: Emphasis)
+
 /**
- * The finer detail, in one card so it reads as a group rather than as loose lines:
- * each part sits under the thing it breaks down, and the values are muted so the
- * labels carry the structure. A group with nothing known is left out entirely.
+ * The day's finer detail: one line per nutrient, grouped under the thing it belongs to,
+ * each group starting from its whole and ending with whatever the parts leave over.
+ *
+ * That last line is the point of the shape. Saturated, mono, poly and trans fat should
+ * account for all of a day's fat, so a gap means a food's panel never recorded them —
+ * worth saying rather than leaving the reader to wonder why the numbers do not add up.
+ * Fiber and sugars are components of carbohydrate rather than a partition of it, so
+ * their gap is real food (starch) and is named as such.
  */
 @Composable
-private fun DetailCard(groups: List<Pair<String, List<Nutrient>>>, totals: Nutrients) {
-    val shown = groups.mapNotNull { (label, parts) ->
-        val line = parts
-            .mapNotNull { nutrient -> totals[nutrient]?.let { formatNutrientNamed(nutrient, it) } }
-            .joinToString("  \u00b7  ")
-        if (line.isBlank()) null else label to line
-    }
-    if (shown.isEmpty()) return
+private fun DetailCard(totals: Nutrients) {
+    val groups = listOf(
+        detailGroup(totals, Nutrient.FAT.displayName, Nutrient.FAT, FAT_PARTS, "not recorded"),
+        detailGroup(
+            totals,
+            Nutrient.CARBS.displayName,
+            Nutrient.CARBS,
+            listOf(Nutrient.FIBER, Nutrient.SUGARS),
+            "starch and other",
+        ),
+        detailGroup(totals, "Other", null, listOf(Nutrient.SODIUM, Nutrient.CHOLESTEROL), null),
+    ).filter { it.isNotEmpty() }
+    if (groups.isEmpty()) return
 
     Column(
         modifier = Modifier
@@ -230,26 +243,83 @@ private fun DetailCard(groups: List<Pair<String, List<Nutrient>>>, totals: Nutri
             // A quieter tone than the macro cards' surfaceVariant, so the detail reads
             // as one step below them rather than as more of the same.
             .background(MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.shapes.medium)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
-        shown.forEachIndexed { index, (label, line) ->
+        groups.forEachIndexed { index, lines ->
             if (index > 0) {
                 HorizontalDivider(
                     modifier = Modifier.padding(vertical = 8.dp),
                     color = MaterialTheme.colorScheme.outlineVariant,
                 )
             }
-            Text(
-                label,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                line,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            lines.forEach { DetailRow(it) }
         }
+    }
+}
+
+/** A group's lines, or nothing at all when none of its parts are known. */
+private fun detailGroup(
+    totals: Nutrients,
+    heading: String,
+    whole: Nutrient?,
+    parts: List<Nutrient>,
+    gapName: String?,
+): List<DetailLine> {
+    val known = parts.mapNotNull { nutrient -> totals[nutrient]?.let { nutrient to it } }
+    if (known.isEmpty()) return emptyList()
+
+    val total = whole?.let { totals[it] }
+    val lines = mutableListOf(
+        DetailLine(
+            name = heading,
+            value = if (whole != null && total != null) formatAmount(whole, total) else "",
+            emphasis = Emphasis.WHOLE,
+        ),
+    )
+    known.forEach { (nutrient, amount) ->
+        lines += DetailLine(nutrient.displayName, formatAmount(nutrient, amount), Emphasis.PART)
+    }
+    if (whole != null && total != null && gapName != null) {
+        val gap = total - known.sumOf { it.second }
+        if (gap >= GAP_FLOOR) {
+            lines += DetailLine(gapName, "${round(gap)}\u00a0${whole.unit}", Emphasis.GAP)
+        }
+    }
+    return lines
+}
+
+@Composable
+private fun DetailRow(line: DetailLine) {
+    val whole = line.emphasis == Emphasis.WHOLE
+    val style = if (whole) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium
+    val weight = if (whole) FontWeight.SemiBold else null
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            line.name,
+            style = style,
+            fontWeight = weight,
+            color = if (whole) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            // The parts sit under the whole they belong to.
+            modifier = Modifier.padding(start = if (whole) 0.dp else 14.dp).weight(1f),
+        )
+        Text(
+            line.value,
+            style = style,
+            fontWeight = weight,
+            color = if (line.emphasis == Emphasis.GAP) {
+                // The gap is worked out from the others, not measured, so it is quieter.
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+        )
     }
 }
 
