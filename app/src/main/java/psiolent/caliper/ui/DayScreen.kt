@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
@@ -143,6 +142,9 @@ private fun DayTotals(totals: Nutrients, burned: HealthConnect.Burned?, onConnec
                 round(totals[Nutrient.KCAL] ?: 0.0),
                 style = MaterialTheme.typography.displayMedium,
                 fontWeight = FontWeight.Bold,
+                // The one number the screen is about: the only place the accent is used,
+                // so it keeps meaning "this is the figure that matters".
+                color = MaterialTheme.colorScheme.primary,
             )
             Text(
                 " kcal eaten",
@@ -180,27 +182,62 @@ private fun DayTotals(totals: Nutrients, burned: HealthConnect.Burned?, onConnec
             MacroCard("carbs", totals[Nutrient.CARBS])
         }
 
-        Breakdown("Fat", totals, listOf(
-            Nutrient.SATURATED_FAT,
-            Nutrient.TRANS_FAT,
-            Nutrient.MONOUNSATURATED_FAT,
-            Nutrient.POLYUNSATURATED_FAT,
-        ))
-        Breakdown("Carbs", totals, listOf(
-            Nutrient.FIBER,
-            Nutrient.SOLUBLE_FIBER,
-            Nutrient.INSOLUBLE_FIBER,
-            Nutrient.SUGARS,
-        ))
+        DetailCard(
+            groups = listOf(
+                "Fat" to listOf(
+                    Nutrient.SATURATED_FAT,
+                    Nutrient.TRANS_FAT,
+                    Nutrient.MONOUNSATURATED_FAT,
+                    Nutrient.POLYUNSATURATED_FAT,
+                ),
+                "Carbs" to listOf(Nutrient.FIBER, Nutrient.SUGARS),
+                "Other" to listOf(Nutrient.SODIUM, Nutrient.CHOLESTEROL),
+            ),
+            totals = totals,
+        )
+    }
+}
 
-        val rest = listOf(Nutrient.SODIUM, Nutrient.CHOLESTEROL)
-            .mapNotNull { nutrient -> totals[nutrient]?.let { formatNutrient(nutrient, it) } }
-        if (rest.isNotEmpty()) {
+/**
+ * The finer detail, in one card so it reads as a group rather than as loose lines:
+ * each part sits under the thing it breaks down, and the values are muted so the
+ * labels carry the structure. A group with nothing known is left out entirely.
+ */
+@Composable
+private fun DetailCard(groups: List<Pair<String, List<Nutrient>>>, totals: Nutrients) {
+    val shown = groups.mapNotNull { (label, parts) ->
+        val line = parts
+            .mapNotNull { nutrient -> totals[nutrient]?.let { formatNutrientNamed(nutrient, it) } }
+            .joinToString("  \u00b7  ")
+        if (line.isBlank()) null else label to line
+    }
+    if (shown.isEmpty()) return
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp)
+            // A quieter tone than the macro cards' surfaceVariant, so the detail reads
+            // as one step below them rather than as more of the same.
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.shapes.medium)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        shown.forEachIndexed { index, (label, line) ->
+            if (index > 0) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+            }
             Text(
-                rest.joinToString("  \u00b7  "),
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                line,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 14.dp),
             )
         }
     }
@@ -228,23 +265,6 @@ private fun RowScope.MacroCard(label: String, grams: Double?) {
 }
 
 @Composable
-private fun Breakdown(label: String, totals: Nutrients, parts: List<Nutrient>) {
-    val line = parts
-        .mapNotNull { nutrient -> totals[nutrient]?.let { "${nutrient.shortName} ${round(it)}" } }
-        .joinToString("  \u00b7  ")
-    if (line.isBlank()) return
-    Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(52.dp),
-        )
-        Text(line, style = MaterialTheme.typography.bodyMedium)
-    }
-}
-
-@Composable
 private fun ItemRow(entry: LogEntryEntity) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
@@ -253,7 +273,7 @@ private fun ItemRow(entry: LogEntryEntity) {
         Column(Modifier.weight(1f)) {
             Text(entry.label, style = MaterialTheme.typography.bodyLarge)
             Text(
-                "${round(entry.amount)} ${entry.unit} \u00b7 ${round(entry.grams)} g",
+                portion(entry),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -269,6 +289,18 @@ private fun ItemRow(entry: LogEntryEntity) {
         }
     }
 }
+
+/**
+ * What was eaten, in the units it was logged in: "2 × 1 large egg · 122 g". When the
+ * unit already is grams, saying it twice ("64 g · 64 g") adds nothing, so it is said
+ * once.
+ */
+private fun portion(entry: LogEntryEntity): String =
+    if (entry.unit.equals("g", ignoreCase = true)) {
+        "${round(entry.grams)} g"
+    } else {
+        "${round(entry.amount)} \u00d7 ${entry.unit} \u00b7 ${round(entry.grams)} g"
+    }
 
 private val dayFormat = DateTimeFormatter.ofPattern("EEE d MMM")
 private val timeFormat: DateTimeFormatter = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
