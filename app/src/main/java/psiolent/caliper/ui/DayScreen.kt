@@ -320,18 +320,23 @@ private fun portion(entry: LogEntryEntity): String =
     }
 
 /**
- * The burned line: what was burned, and — once the reading is old enough to explain a
- * number that is not moving — when it is from. Health Connect aggregates over the whole
- * day, so the figure holds still for as long as the source stays quiet, and a source can
- * stay quiet for hours without anything being wrong.
+ * The burned line. Health Connect's total is not a running tally: it is the active
+ * calories so far plus a resting burn for the whole day, so it reads as what today will
+ * come to if nothing more happens — and it rises if you move again. Said as a tally it
+ * looks wrong; said as a day's figure it is right.
+ *
+ * Once the reading is old enough to explain a number that is not moving, when it is
+ * from is appended. Health Connect aggregates over the whole day, so the figure holds
+ * still for as long as the source stays quiet, and a source can stay quiet for hours
+ * without anything being wrong.
  */
 private fun burnedLine(burned: HealthConnect.Burned.Value): String {
     val line = when {
         burned.totalKcal != null && burned.activeKcal != null ->
-            "burned ${round(burned.totalKcal)} kcal total \u00b7 ${round(burned.activeKcal)} active"
-        burned.totalKcal != null -> "burned ${round(burned.totalKcal)} kcal total"
+            "will burn ${round(burned.totalKcal)} kcal today \u00b7 ${round(burned.activeKcal)} active so far"
+        burned.totalKcal != null -> "will burn ${round(burned.totalKcal)} kcal today"
         burned.activeKcal != null ->
-            "burned ${round(burned.activeKcal)} kcal active (resting burn not recorded)"
+            "burned ${round(burned.activeKcal)} kcal active so far (resting burn not recorded)"
         else -> return "No calories burned recorded for this day"
     }
     val recorded = burned.recordedAt ?: return line
