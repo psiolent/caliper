@@ -1,7 +1,7 @@
 package psiolent.caliper.ui
 
-import android.content.Intent
-import android.speech.RecognizerIntent
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,6 +24,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -43,6 +45,7 @@ import psiolent.caliper.AppContainer
 import psiolent.caliper.data.MessageEntity
 import psiolent.caliper.data.MessageRole
 import psiolent.caliper.integrations.Images
+import psiolent.caliper.integrations.VoiceInput
 
 @Composable
 fun ChatScreen(container: AppContainer) {
@@ -57,15 +60,33 @@ fun ChatScreen(container: AppContainer) {
 
     var input by rememberSaveable { mutableStateOf("") }
     var image by remember { mutableStateOf<String?>(null) }
+    var listening by remember { mutableStateOf(false) }
+    var voiceError by remember { mutableStateOf<String?>(null) }
+
+    val voice = remember {
+        VoiceInput(
+            context = context,
+            onText = { input = it },
+            onListeningChanged = { listening = it },
+            onError = { voiceError = it },
+        )
+    }
+    DisposableEffect(Unit) {
+        onDispose { voice.release() }
+    }
+
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) voice.start(input) else voiceError = "Microphone permission is needed for voice input."
+    }
+    val beginVoice: () -> Unit = {
+        voiceError = null
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        if (granted) voice.start(input) else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
 
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch { image = Images.toDataUrl(context, uri) }
-    }
-    val voice = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            ?.firstOrNull()
-            ?.takeIf { it.isNotBlank() }
-            ?.let { spoken -> input = if (input.isBlank()) spoken else "$input $spoken" }
     }
 
     Column(Modifier.fillMaxSize().imePadding()) {
@@ -76,6 +97,23 @@ fun ChatScreen(container: AppContainer) {
         ) {
             items(messages, key = { it.id }) { message -> MessageBubble(message) }
             if (busy) item { Text(status ?: "Thinking\u2026", style = MaterialTheme.typography.bodySmall) }
+        }
+
+        if (listening) {
+            Text(
+                "Listening\u2026 tap \u25A0 when you're done",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
+        }
+        voiceError?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
         }
 
         if (image != null) {
@@ -102,11 +140,9 @@ fun ChatScreen(container: AppContainer) {
             IconButton(
                 onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
             ) { Text("\uD83D\uDCF7") }
-            IconButton(
-                onClick = {
-                    if (voiceIntent().resolveActivity(context.packageManager) != null) voice.launch(voiceIntent())
-                },
-            ) { Text("\uD83C\uDFA4") }
+            IconButton(onClick = { if (listening) voice.stop() else beginVoice() }) {
+                Text(if (listening) "\u25A0" else "\uD83C\uDFA4")
+            }
             Button(
                 onClick = {
                     viewModel.send(input.trim(), image)
@@ -122,11 +158,6 @@ fun ChatScreen(container: AppContainer) {
             Text("New session")
         }
     }
-}
-
-private fun voiceIntent(): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-    putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
 }
 
 @Composable
