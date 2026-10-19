@@ -52,7 +52,8 @@ Writes:
   existing row with the same name and brand rather than adding a duplicate.
 - `log(meal_id, target_id, amount, unit)` — add an item to a meal. The target is a food
   or a recipe. No time: the item belongs to the meal's. A unit that cannot be resolved
-  comes back as an error naming the ones that would work.
+  comes back as an error naming the ones that would work. A recipe also answers to the
+  unit `recipe` meaning the whole dish, so half of it is `0.5 recipe`.
 - `save_recipe(...)`, `update_recipe(...)` — defining a recipe and changing it. A recipe
   is logged against directly; anything already logged keeps the panel it was logged with.
 - `revise_entry(entry_id, amount?, unit?, delete?)` — fix or delete a logged item.

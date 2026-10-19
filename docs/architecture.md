@@ -43,6 +43,13 @@ grouping rule ("everything in one session is one meal unless told otherwise") li
 the prompt, because only the agent can act on a correction. See
 `docs/decisions/0006`.
 
+## The day's allowance
+
+The Day screen leads with calories left: the day's burn moved by a goal set in Settings —
+negative for a deficit, positive for a surplus — minus what has been eaten. Without a burn
+there is no allowance, and the screen falls back to calories eaten alone. See
+`docs/decisions/0011`.
+
 ## The tool boundary
 
 Every value the model sends is read strictly: a shape that cannot be read, or a value

@@ -3,6 +3,9 @@
 Open issues the user has raised. None are started. Read this before proposing work,
 and ask the user which to take — they sequence this themselves.
 
+Right now there is nothing to pick up: the one item below is decided, and the intent is to
+use the app and let real use produce the next list.
+
 Ordered roughly as the user listed them, not by priority.
 
 ## 1. A turn and leaving the screen (tested; decided to live with it)

@@ -66,6 +66,10 @@ dietary constraints, preferences. Always included in context.
 The conversation transcript. `MessageRole` is `USER` or `ASSISTANT`. Stored for
 the user to read back; the agent never reads these.
 
+History is built from them directly: one query describes each session by its first user
+message and its last reply (`SessionSummary`, in `SessionDao`). That is why there is no
+summary column — the description is the transcript, read back, and cannot drift from it.
+
 A user message may carry `thumbs: List<String>` — small copies (a ~2.5 KB JPEG data
 URL each) of the photos sent with it, so the transcript can show what was sent. The
 full image is still never kept.

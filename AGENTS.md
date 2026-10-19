@@ -96,6 +96,11 @@ Single module, packages by concern under `app/src/main/java/psiolent/caliper/`:
   resolves a quantity to grams and scales.
 - **A meal has a time; its items do not.** Items belong to a meal and list in the
   order they were logged.
+- **One breakdown sheet.** Any nutrient panel — day, item, food, recipe — opens
+  `ui/BreakdownSheet.kt`; don't format nutrients for display anywhere else
+  (`docs/decisions/0012`).
+- **Irreversible actions ask first and name what breaks.** Deleting a food can leave a
+  recipe uncomputable, so the confirmation says which.
 - Replies are plain text. The chat does not render markdown, and the prompt asks for
   none — don't add a renderer without asking.
 
