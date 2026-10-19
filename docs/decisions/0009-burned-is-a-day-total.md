@@ -25,3 +25,26 @@ So the Day screen shows the burn's resting and active parts beneath the total, w
 what makes a still figure explicable at a glance. A reading-time note was tried first and
 removed: the split says the same thing without a second number to read. The day re-reads
 the figure every minute while it is open, so it moves as soon as the source does.
+
+## Where the active figure comes from
+
+**Decision.** The active figure is read from the `ActiveCaloriesBurnedRecord`s and taken
+from **one app** — the one reporting the most for the day — not from Health Connect's
+`ACTIVE_CALORIES_TOTAL` aggregate. `selectBurn` does it and is tested.
+
+**Why.** The aggregate drops records that overlap. A ring wrote 167 kcal for the day and
+569 kcal for a walk inside it, and its own app showed 736. Health Connect kept the
+day-long record and discarded the workout, so the app showed 167 — right in the data,
+wrong to the person looking at their wrist. The two records were meant to be added; the
+app's own arithmetic says so.
+
+One app's numbers, not a mixture, because two trackers covering the same hours would
+double count. "The one reporting the most" is a heuristic: the app tracking you all day
+reports more than one that caught part of it.
+
+**Consequence.** The total is adjusted by the same amount as the active figure
+(`total − aggregateActive + active`), because Health Connect derives its total from its own
+active number. That keeps `total − active = resting` true, which the screen relies on. The
+burn's split names the app — "736 active from Oura" — because a disagreement with another
+tracker is the usual reason someone distrusts this number.
+

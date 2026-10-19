@@ -383,7 +383,13 @@ private fun BurnSplit(balance: CalorieBalance, measured: HealthConnect.Burned.Va
     val parts = buildList {
         resting?.let { add("${round(it)} resting") }
         // An absent active figure is said out loud: a resting-only total looks complete.
-        add(measured.activeKcal?.let { "${round(it)} active" } ?: "no activity recorded")
+        add(
+            measured.activeKcal?.let { active ->
+                // Naming the app makes a disagreement with another one explicable.
+                val from = measured.source?.let { " from ${prettyOrigin(it)}" }.orEmpty()
+                "${round(active)} active$from"
+            } ?: "no activity recorded",
+        )
     }
     Text(
         parts.joinToString("  \u00b7  "),
@@ -391,6 +397,17 @@ private fun BurnSplit(balance: CalorieBalance, measured: HealthConnect.Burned.Va
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = 8.dp),
     )
+}
+
+/**
+ * A package name as a readable tracker name: `com.ouraring.oura` is "Oura". Some sources
+ * end in a generated id rather than a name, so the last segment that reads as a word wins.
+ */
+private fun prettyOrigin(packageName: String): String {
+    val word = packageName.split('.')
+        .lastOrNull { part -> part.length in 2..16 && part.all { it.isLetter() } }
+        ?: return packageName
+    return word.replaceFirstChar { it.uppercaseChar() }
 }
 
 @Composable
