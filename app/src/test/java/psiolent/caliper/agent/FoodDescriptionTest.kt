@@ -4,10 +4,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import psiolent.caliper.data.FoodEntity
+import psiolent.caliper.data.FoodSource
 import psiolent.caliper.data.LogEntryEntity
 import psiolent.caliper.data.TargetType
 import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
+import psiolent.caliper.domain.Serving
+import psiolent.caliper.integrations.UsdaFood
 
 /**
  * What the model is told about foods and amounts. Both used to be quietly wrong: a recipe
@@ -133,6 +137,48 @@ class FoodDescriptionTest {
         assertEquals("0.5 cup Rolled oats", ingredientLine(0.5, "cup", "Rolled oats"))
         assertEquals("0.25 cup Greek yogurt", ingredientLine(0.25, "cup", "Greek yogurt"))
         assertEquals("80 g Honey", ingredientLine(80.0, "g", "Honey"))
+    }
+
+    @Test
+    fun `a saved food is described with what the model logs against`() {
+        val food = FoodEntity(
+            id = "f1",
+            name = "Rolled oats",
+            brand = "MALT O MEAL",
+            per100g = Nutrients(mapOf(Nutrient.KCAL to 375.0, Nutrient.FIBER to 10.4)),
+            estimated = setOf(Nutrient.SOLUBLE_FIBER),
+            servings = listOf(Serving("cup", 81.0)),
+            source = FoodSource.USDA,
+            createdAt = 0,
+        )
+
+        val line = describeFood(food)
+
+        assertTrue(line.contains("id=f1"))
+        assertTrue(line.contains("name=\"Rolled oats\""))
+        assertTrue(line.contains("brand=\"MALT O MEAL\""))
+        // The portion is how a "cup of it" becomes grams; losing it breaks logging.
+        assertTrue(line.contains("servings=[cup=81g]"))
+        assertTrue(line.contains("fiber=10.4"))
+        assertTrue(line.contains("source=usda"))
+        assertTrue(line.contains("estimated=[soluble_fiber]"))
+    }
+
+    @Test
+    fun `a USDA candidate is described with its fdc id`() {
+        val food = UsdaFood(
+            fdcId = 42,
+            name = "Milk, whole",
+            brand = null,
+            per100g = Nutrients(mapOf(Nutrient.KCAL to 60.5)),
+            servings = listOf(Serving("cup", 244.0)),
+        )
+
+        val line = describeUsda(food)
+
+        assertTrue(line.contains("fdc_id=42"))
+        assertTrue(line.contains("servings=[cup=244g]"))
+        assertTrue(line.contains("kcal=60.5"))
     }
 
     @Test

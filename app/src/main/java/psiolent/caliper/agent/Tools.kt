@@ -581,8 +581,6 @@ class ToolExecutor(
             nutrient to amount
         }.toMap(),
     )
-
-    // --- display helpers ---------------------------------------------------
 }
 
 // The descriptions below are pure and top-level so their formatting can be tested without
