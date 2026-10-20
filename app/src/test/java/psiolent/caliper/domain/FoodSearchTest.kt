@@ -89,11 +89,13 @@ class FoodSearchTest {
     }
 
     @Test
-    fun `a word inside a longer one is offered, not matched`() {
-        // A plain substring search used to find this; it should survive, but only as a
-        // suggestion, so "milk" does not silently become "buttermilk".
+    fun `a word inside a longer one is not a match`() {
+        // A mid-word hit is a coincidence ("tea" in "steak"), and a suggestion suppresses
+        // the USDA fallback, so these must not match at all.
         val buttermilk = SearchTarget(id = "b", name = "Buttermilk, whole", brand = null)
-        assertEquals(MatchStrength.CLOSE, strength("milk", buttermilk))
+        assertNull(strength("milk", buttermilk))
+        val steak = SearchTarget(id = "s", name = "Steak, grilled", brand = null)
+        assertNull(strength("tea", steak))
     }
 
     @Test
@@ -124,8 +126,22 @@ class FoodSearchTest {
     }
 
     @Test
+    fun `within one strength, more words matched wins`() {
+        // Both are CLOSE for a four-word query, but one matched three words and the other
+        // two, and that order decides which survive a limit.
+        val three = SearchTarget("3", "peach tea protein banana", null)
+        val two = SearchTarget("2", "peach protein powder", null)
+
+        val ranked = rankFoods("peach tea protein shake", listOf(two, three))
+
+        assertTrue(ranked.all { it.strength == MatchStrength.CLOSE })
+        assertEquals(listOf("3", "2"), ranked.map { it.target.id })
+    }
+
+    @Test
     fun `a limit never drops a match for a suggestion`() {
-        val weaker = (1..20).map { SearchTarget("w$it", "buttermilk $it", null) }
+        // "milq" is one letter from "milk": close, never a match.
+        val weaker = (1..20).map { SearchTarget("w$it", "milq $it", null) }
         val exact = SearchTarget("exact", "Milk, whole", null)
 
         val ranked = rankFoods("milk", weaker + exact, limit = 5)

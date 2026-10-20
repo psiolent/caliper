@@ -318,7 +318,8 @@ class ToolExecutor(
 
     private suspend fun findFood(args: JsonObject): String {
         val query = args.string("query")?.trim() ?: return "Error: query is required"
-        if (query.isBlank()) return "Error: query must name the food to look for."
+        // The scorer works on letters and digits, so anything else is not a query at all.
+        if (query.none(Char::isLetterOrDigit)) return "Error: query must name the food to look for."
 
         // Confident matches are returned as matches. A close one is only a suggestion, and
         // saying so is the difference between the agent asking and the agent logging
@@ -327,9 +328,11 @@ class ToolExecutor(
         val confident = found
             .filter { it.strength != MatchStrength.CLOSE }
             .mapNotNull { repo.food(it.target.id) }
-        val close = found
-            .filter { it.strength == MatchStrength.CLOSE }
-            .mapNotNull { repo.food(it.target.id) }
+        val close = if (confident.isEmpty()) {
+            found.filter { it.strength == MatchStrength.CLOSE }.mapNotNull { repo.food(it.target.id) }
+        } else {
+            emptyList()
+        }
 
         // USDA is the fallback for a genuine miss, not for a near-miss: searching it while
         // a saved food is clearly similar spends a request to offer the agent alternatives
@@ -342,7 +345,7 @@ class ToolExecutor(
 
         return foodLookupReply(
             query = query,
-            librarySize = if (confident.isEmpty()) repo.foodCount() else 0,
+            librarySize = repo.foodCount(),
             confident = confident.map { describeFood(it) },
             close = close.map { describeFood(it) },
             usda = usdaLines,
@@ -366,7 +369,7 @@ class ToolExecutor(
         val ingredients = recipe.ingredients
             .map { ingredient ->
                 val name = repo.food(ingredient.foodId)?.name ?: "(missing food)"
-                "${formatAmount(ingredient.amount)} ${ingredient.unit} $name"
+                ingredientLine(ingredient.amount, ingredient.unit, name)
             }
             .joinToString(", ")
         // The portions are the units this recipe can be logged in, the whole included.
@@ -580,32 +583,36 @@ class ToolExecutor(
     )
 
     // --- display helpers ---------------------------------------------------
+}
 
-    private fun describeFood(food: FoodEntity): String = buildString {
-        append("- id=${food.id} name=\"${food.name}\"")
-        food.brand?.let { append(" brand=\"$it\"") }
-        append(" per100g={${describeNutrients(food.per100g, includeUnits = false)}}")
-        if (food.servings.isNotEmpty()) {
-            append(" servings=[${food.servings.joinToString(", ") { "${it.name}=${formatMeasure(it.grams)}g" }}]")
-        }
-        append(" source=${food.source.name.lowercase()}")
-        if (food.estimated.isNotEmpty()) {
-            append(" estimated=[${food.estimated.joinToString(", ") { it.name.lowercase() }}]")
-        }
+// The descriptions below are pure and top-level so their formatting can be tested without
+// a repository or a network: the fractions they render are what the model relies on.
+
+internal fun describeFood(food: FoodEntity): String = buildString {
+    append("- id=${food.id} name=\"${food.name}\"")
+    food.brand?.let { append(" brand=\"$it\"") }
+    append(" per100g={${describeNutrients(food.per100g, includeUnits = false)}}")
+    if (food.servings.isNotEmpty()) {
+        append(" servings=[${food.servings.joinToString(", ") { "${it.name}=${formatMeasure(it.grams)}g" }}]")
     }
-
-    private fun describeUsda(food: UsdaFood): String = buildString {
-        append("- fdc_id=${food.fdcId} name=\"${food.name}\"")
-        food.brand?.let { append(" brand=\"$it\"") }
-        append(" per100g={${describeNutrients(food.per100g, includeUnits = false)}}")
-        if (food.servings.isNotEmpty()) {
-            append(" servings=[${food.servings.joinToString(", ") { "${it.name}=${formatMeasure(it.grams)}g" }}]")
-        }
+    append(" source=${food.source.name.lowercase()}")
+    if (food.estimated.isNotEmpty()) {
+        append(" estimated=[${food.estimated.joinToString(", ") { it.name.lowercase() }}]")
     }
 }
 
-// Paper descriptions are pure and top-level so their formatting can be tested without a
-// repository or a network: the fractions they render are what the model relies on.
+internal fun describeUsda(food: UsdaFood): String = buildString {
+    append("- fdc_id=${food.fdcId} name=\"${food.name}\"")
+    food.brand?.let { append(" brand=\"$it\"") }
+    append(" per100g={${describeNutrients(food.per100g, includeUnits = false)}}")
+    if (food.servings.isNotEmpty()) {
+        append(" servings=[${food.servings.joinToString(", ") { "${it.name}=${formatMeasure(it.grams)}g" }}]")
+    }
+}
+
+/** One recipe ingredient as the model reads it: "0.5 cup Rolled oats". */
+internal fun ingredientLine(amount: Double, unit: String, name: String): String =
+    "${formatAmount(amount)} $unit $name"
 
 internal fun describeEntry(entry: LogEntryEntity): String = buildString {
     append("${formatAmount(entry.amount)} ${entry.unit} of \"${entry.label}\" (${formatMeasure(entry.grams)} g)")

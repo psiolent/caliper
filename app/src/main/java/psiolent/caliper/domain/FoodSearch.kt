@@ -98,16 +98,14 @@ private fun typoMatch(queryWord: String, candidate: String): Boolean =
     queryWord.length >= 4 && withinOneEdit(queryWord, candidate)
 
 /**
- * A looser signal that only ever reaches CLOSE: the query word sits inside a longer one
- * ("milk" in "buttermilk"), or is a two-letter prefix ("wh" in "whole"). It keeps the
- * recall a plain substring search had — and the Library's per-keystroke filtering — while
- * still refusing to call these matches.
+ * A two-letter prefix is enough to be worth showing while typing ("wh" finds "whole"),
+ * but never enough to be a match. Longer prefixes are already strong matches.
+ *
+ * Deliberately not a substring: matching "tea" inside "steak" would turn a genuine miss
+ * into a suggestion, and suggestions now suppress the USDA fallback.
  */
-private fun weakMatch(queryWord: String, candidate: String): Boolean = when {
-    queryWord.length >= 3 -> candidate.contains(queryWord)
-    queryWord.length == 2 -> candidate.startsWith(queryWord)
-    else -> false
-}
+private fun weakMatch(queryWord: String, candidate: String): Boolean =
+    queryWord.length == 2 && candidate.startsWith(queryWord)
 
 private fun withinOneEdit(a: String, b: String): Boolean {
     if (a == b) return true

@@ -121,9 +121,18 @@ class FoodDescriptionTest {
         )
         assertTrue(reply.contains("No saved food matches"))
         assertTrue(reply.contains("27 foods"))
-        assertTrue(reply.contains(CLOSE_MATCH_HEADING))
+        // The words that carry the meaning, not the constant that holds them.
+        assertTrue(reply.contains("not matches"))
+        assertTrue(reply.contains("do not log"))
         assertTrue(reply.contains("gramms peach tea protein"))
         assertFalse(reply.contains("USDA"))
+    }
+
+    @Test
+    fun `a recipe ingredient keeps a fraction`() {
+        assertEquals("0.5 cup Rolled oats", ingredientLine(0.5, "cup", "Rolled oats"))
+        assertEquals("0.25 cup Greek yogurt", ingredientLine(0.25, "cup", "Greek yogurt"))
+        assertEquals("80 g Honey", ingredientLine(80.0, "g", "Honey"))
     }
 
     @Test
