@@ -30,6 +30,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.UUID
 
 /**
@@ -316,7 +317,8 @@ class ToolExecutor(
     }
 
     private suspend fun findFood(args: JsonObject): String {
-        val query = args.string("query") ?: return "Error: query is required"
+        val query = args.string("query")?.trim() ?: return "Error: query is required"
+        if (query.isBlank()) return "Error: query must name the food to look for."
 
         // Confident matches are returned as matches. A close one is only a suggestion, and
         // saying so is the difference between the agent asking and the agent logging
@@ -325,30 +327,26 @@ class ToolExecutor(
         val confident = found
             .filter { it.strength != MatchStrength.CLOSE }
             .mapNotNull { repo.food(it.target.id) }
-        if (confident.isNotEmpty()) {
-            return confident.joinToString("\n") { describeFood(it) }
+        val close = found
+            .filter { it.strength == MatchStrength.CLOSE }
+            .mapNotNull { repo.food(it.target.id) }
+
+        // USDA is the fallback for a genuine miss, not for a near-miss: searching it while
+        // a saved food is clearly similar spends a request to offer the agent alternatives
+        // to something it already has.
+        val usdaLines = if (confident.isEmpty() && close.isEmpty()) {
+            usda.search(query).map { describeUsda(it) }
+        } else {
+            null
         }
 
-        val close = found.mapNotNull { repo.food(it.target.id) }
-        val librarySize = repo.foodCount()
-        val usdaMatches = usda.search(query)
-
-        return buildString {
-            appendLine(noSavedMatchLine(query, librarySize))
-            if (close.isNotEmpty()) {
-                appendLine()
-                appendLine("Closest saved foods — similar, not matches:")
-                close.forEach { appendLine(describeFood(it)) }
-            }
-            appendLine()
-            if (usdaMatches.isEmpty()) {
-                append("USDA has no match either. Read the label from a photo, or look it up on the web.")
-            } else {
-                appendLine("USDA candidates:")
-                usdaMatches.forEach { appendLine(describeUsda(it)) }
-                append("Save the right one with save_food using its fdc_id.")
-            }
-        }
+        return foodLookupReply(
+            query = query,
+            librarySize = if (confident.isEmpty()) repo.foodCount() else 0,
+            confident = confident.map { describeFood(it) },
+            close = close.map { describeFood(it) },
+            usda = usdaLines,
+        )
     }
 
     /** Recipes by name, with the ids needed to log against one or to change it. */
@@ -604,19 +602,22 @@ class ToolExecutor(
             append(" servings=[${food.servings.joinToString(", ") { "${it.name}=${formatMeasure(it.grams)}g" }}]")
         }
     }
-
-    private fun describeEntry(entry: LogEntryEntity): String = buildString {
-        append("${formatAmount(entry.amount)} ${entry.unit} of \"${entry.label}\" (${formatMeasure(entry.grams)} g)")
-        append(" id=${entry.id}")
-        entry.nutrients[Nutrient.KCAL]?.let { append(" ${formatMeasure(it)} kcal") }
-    }
-
-    private fun describeNutrients(nutrients: Nutrients, includeUnits: Boolean = true): String =
-        nutrients.amounts.entries.joinToString(", ") { (nutrient, value) ->
-            if (includeUnits) "${nutrient.name.lowercase()}=${formatMeasure(value)}${nutrient.unit}"
-            else "${nutrient.name.lowercase()}=${formatMeasure(value)}"
-        }
 }
+
+// Paper descriptions are pure and top-level so their formatting can be tested without a
+// repository or a network: the fractions they render are what the model relies on.
+
+internal fun describeEntry(entry: LogEntryEntity): String = buildString {
+    append("${formatAmount(entry.amount)} ${entry.unit} of \"${entry.label}\" (${formatMeasure(entry.grams)} g)")
+    append(" id=${entry.id}")
+    entry.nutrients[Nutrient.KCAL]?.let { append(" ${formatMeasure(it)} kcal") }
+}
+
+internal fun describeNutrients(nutrients: Nutrients, includeUnits: Boolean = true): String =
+    nutrients.amounts.entries.joinToString(", ") { (nutrient, value) ->
+        if (includeUnits) "${nutrient.name.lowercase()}=${formatMeasure(value)}${nutrient.unit}"
+        else "${nutrient.name.lowercase()}=${formatMeasure(value)}"
+    }
 
 /**
  * Read a time a model sent. A bare time is taken as today. Null means it could not
@@ -737,11 +738,59 @@ internal fun noSavedMatchLine(query: String, librarySize: Int): String = when (l
     else -> "No saved food matches \"$query\". The library has $librarySize foods."
 }
 
-/** An amount in whatever unit: exact enough that 0.25 cup does not become 0. */
-internal fun formatAmount(value: Double): String = trimZeroes("%.2f".format(value))
+/** The heading that keeps a near-miss from being read as a match. */
+internal const val CLOSE_MATCH_HEADING =
+    "Closest saved foods — similar, not matches. Ask which one; do not log one."
+
+/**
+ * The whole find_food answer, assembled from lines already rendered.
+ *
+ * Kept pure so the rule that matters can be tested: a confident match is returned alone,
+ * and anything less is labelled as a suggestion.
+ *
+ * [usda] is null when USDA was not consulted, which happens when a saved food is already
+ * similar — there is no point offering alternatives to something the user has.
+ */
+internal fun foodLookupReply(
+    query: String,
+    librarySize: Int,
+    confident: List<String>,
+    close: List<String>,
+    usda: List<String>?,
+): String {
+    if (confident.isNotEmpty()) return confident.joinToString("\n")
+
+    return buildString {
+        appendLine(noSavedMatchLine(query, librarySize))
+        if (close.isNotEmpty()) {
+            appendLine()
+            appendLine(CLOSE_MATCH_HEADING)
+            close.forEach { appendLine(it) }
+        }
+        if (usda != null) {
+            appendLine()
+            if (usda.isEmpty()) {
+                append("USDA has no match either. Read the label from a photo, or look it up on the web.")
+            } else {
+                appendLine("USDA candidates:")
+                usda.forEach { appendLine(it) }
+                append("Save the right one with save_food using its fdc_id.")
+            }
+        }
+    }.trimEnd()
+}
+
+/**
+ * An amount in whatever unit: exact enough that 0.25 cup does not become 0.
+ *
+ * Locale.ROOT because the reader is the model, not the person: a comma decimal separator
+ * would make the number unreadable as a number, and the app must not depend on the phone's
+ * language for that.
+ */
+internal fun formatAmount(value: Double): String = trimZeroes(String.format(Locale.ROOT, "%.2f", value))
 
 /** Grams and nutrient values: one decimal is as much as is meant. */
-internal fun formatMeasure(value: Double): String = trimZeroes("%.1f".format(value))
+internal fun formatMeasure(value: Double): String = trimZeroes(String.format(Locale.ROOT, "%.1f", value))
 
 /** "0.50" is "0.5", "80.00" is "80". */
 private fun trimZeroes(formatted: String): String =

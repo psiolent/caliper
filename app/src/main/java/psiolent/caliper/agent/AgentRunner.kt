@@ -155,7 +155,7 @@ class AgentRunner(
         val today = LocalDate.now(ZoneId.systemDefault())
         val day = repo.day(today)
         val totals = day.totals.amounts.entries
-            .joinToString(", ") { "${it.key.name.lowercase()}=${it.value.toInt()}${it.key.unit}" }
+            .joinToString(", ") { "${it.key.name.lowercase()}=${formatMeasure(it.value)}${it.key.unit}" }
             .ifBlank { "nothing logged" }
         return buildString {
             appendLine("Today is $today.")

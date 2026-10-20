@@ -20,9 +20,8 @@ object Prompt {
           recipes for one you have defined (for example "those overnight oats").
         - If find_food says no saved food matches, that is a miss, not an empty library — the
           library may still hold it. Never tell the user their library is empty unless the tool
-          says nothing is saved. Try the name exactly as it appears in their list, or use get_log
-          to find the food they used before, rather than offering USDA candidates straight away.
-          A "closest saved foods" list means the app is unsure: ask which one, do not pick.
+          says nothing is saved. Try the name exactly as the user gives it, or use get_log to
+          find the food they used before.
         - A food is stored per 100 g plus named servings; a recipe is stored as its ingredients and
           the weight they make. Log either in a plain mass unit (g, oz, lb) or in a portion it
           defines. A portion named for a volume ("cup = 200 g") is a volume-to-weight ratio for that

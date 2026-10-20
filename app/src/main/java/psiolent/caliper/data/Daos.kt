@@ -7,9 +7,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
-
-/** A food reduced to what searching needs. */
-data class FoodName(val id: String, val name: String, val brand: String?)
+import psiolent.caliper.domain.SearchTarget
 
 @Dao
 interface FoodDao {
@@ -27,7 +25,7 @@ interface FoodDao {
      * there is no reason to decode every nutrient panel and serving list to compare names.
      */
     @Query("SELECT id, name, brand FROM foods")
-    suspend fun names(): List<FoodName>
+    suspend fun names(): List<SearchTarget>
 
     @Query("SELECT COUNT(*) FROM foods")
     suspend fun count(): Int

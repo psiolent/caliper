@@ -81,4 +81,56 @@ class FoodSearchTest {
         // "cot" is too short to forgive a letter: it would match too much.
         assertNull(strength("cot", oats))
     }
+
+    @Test
+    fun `a three-letter prefix is strong but a two-letter one is only close`() {
+        assertEquals(MatchStrength.STRONG, strength("pro"))
+        assertEquals(MatchStrength.CLOSE, strength("pr"))
+    }
+
+    @Test
+    fun `a word inside a longer one is offered, not matched`() {
+        // A plain substring search used to find this; it should survive, but only as a
+        // suggestion, so "milk" does not silently become "buttermilk".
+        val buttermilk = SearchTarget(id = "b", name = "Buttermilk, whole", brand = null)
+        assertEquals(MatchStrength.CLOSE, strength("milk", buttermilk))
+    }
+
+    @Test
+    fun `words in order but not adjacent are strong, not exact`() {
+        assertEquals(MatchStrength.STRONG, strength("peach protein"))
+        assertEquals(MatchStrength.STRONG, strength("peach tea prot"))
+    }
+
+    @Test
+    fun `too few words matched is no hit at all`() {
+        // One of four words is below the half-way threshold.
+        assertTrue(rankFoods("peach banana orange grape", library).isEmpty())
+    }
+
+    @Test
+    fun `the strengths rank in order, then by words matched`() {
+        val exact = SearchTarget("1", "peach tea protein", null)
+        val strong = SearchTarget("2", "protein peach tea drink", null)
+        val close = SearchTarget("3", "peach protein powder", null)
+
+        val ranked = rankFoods("peach tea protein", listOf(close, strong, exact))
+
+        assertEquals(listOf("1", "2", "3"), ranked.map { it.target.id })
+        assertEquals(
+            listOf(MatchStrength.EXACT, MatchStrength.STRONG, MatchStrength.CLOSE),
+            ranked.map { it.strength },
+        )
+    }
+
+    @Test
+    fun `a limit never drops a match for a suggestion`() {
+        val weaker = (1..20).map { SearchTarget("w$it", "buttermilk $it", null) }
+        val exact = SearchTarget("exact", "Milk, whole", null)
+
+        val ranked = rankFoods("milk", weaker + exact, limit = 5)
+
+        assertEquals("exact", ranked.first().target.id)
+        assertEquals(5, ranked.size)
+    }
 }

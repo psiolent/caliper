@@ -60,7 +60,11 @@ private fun score(queryWords: List<String>, target: SearchTarget): Scored? {
         candidateWords.any { candidate -> strongMatch(queryWord, candidate) }
     }
     val matchedAny = queryWords.count { queryWord ->
-        candidateWords.any { candidate -> strongMatch(queryWord, candidate) || typoMatch(queryWord, candidate) }
+        candidateWords.any { candidate ->
+            strongMatch(queryWord, candidate) ||
+                typoMatch(queryWord, candidate) ||
+                weakMatch(queryWord, candidate)
+        }
     }
 
     val strength = when {
@@ -92,6 +96,18 @@ private fun strongMatch(queryWord: String, candidate: String): Boolean =
  */
 private fun typoMatch(queryWord: String, candidate: String): Boolean =
     queryWord.length >= 4 && withinOneEdit(queryWord, candidate)
+
+/**
+ * A looser signal that only ever reaches CLOSE: the query word sits inside a longer one
+ * ("milk" in "buttermilk"), or is a two-letter prefix ("wh" in "whole"). It keeps the
+ * recall a plain substring search had — and the Library's per-keystroke filtering — while
+ * still refusing to call these matches.
+ */
+private fun weakMatch(queryWord: String, candidate: String): Boolean = when {
+    queryWord.length >= 3 -> candidate.contains(queryWord)
+    queryWord.length == 2 -> candidate.startsWith(queryWord)
+    else -> false
+}
 
 private fun withinOneEdit(a: String, b: String): Boolean {
     if (a == b) return true

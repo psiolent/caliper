@@ -5,7 +5,6 @@ import kotlinx.coroutines.flow.map
 import psiolent.caliper.domain.FoodMatch
 import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
-import psiolent.caliper.domain.SearchTarget
 import psiolent.caliper.domain.Serving
 import psiolent.caliper.domain.rankFoods
 import psiolent.caliper.domain.resolveGrams
@@ -49,11 +48,7 @@ class CaliperRepository(private val db: CaliperDatabase) {
     }
 
     suspend fun searchFoods(query: String, limit: Int = 5): List<FoodMatch> =
-        rankFoods(
-            query = query,
-            targets = foods.names().map { SearchTarget(it.id, it.name, it.brand) },
-            limit = limit,
-        )
+        rankFoods(query = query, targets = foods.names(), limit = limit)
 
     /** How many foods are saved, for telling "no match" apart from "nothing saved". */
     suspend fun foodCount(): Int = foods.count()

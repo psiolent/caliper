@@ -35,8 +35,11 @@ The app stores what the agent decides. It has no opinion about grouping.
 ## Tools
 
 Reads:
-- `find_food(query)` — saved foods first, then USDA FoodData Central. Returns
-  candidates; USDA candidates carry an `fdc_id`.
+- `find_food(query)` — saved foods first, then USDA FoodData Central. Saved foods are
+  ranked: an exact phrase, then every word in any order, then a near miss — a typo or a
+  partial phrase — which comes back as "closest saved foods" rather than a match. A miss
+  says how many foods are saved, so it cannot be mistaken for an empty library. USDA is
+  searched only when nothing saved is even similar.
 - `recipes()` — the recipes saved so far, by name, each with the portions it can be
   logged in. Recipes are not otherwise readable, so this is how one you defined earlier
   is found (and how a wrong recipe id is recovered from).
