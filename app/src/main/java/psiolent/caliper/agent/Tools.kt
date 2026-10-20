@@ -16,6 +16,7 @@ import psiolent.caliper.data.Ingredient
 import psiolent.caliper.data.LogEntryEntity
 import psiolent.caliper.data.RecipeEntity
 import psiolent.caliper.data.portions
+import psiolent.caliper.domain.MatchStrength
 import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
 import psiolent.caliper.domain.Serving
@@ -316,16 +317,38 @@ class ToolExecutor(
 
     private suspend fun findFood(args: JsonObject): String {
         val query = args.string("query") ?: return "Error: query is required"
-        val saved = repo.searchFoods(query)
-        if (saved.isNotEmpty()) return saved.joinToString("\n") { describeFood(it) }
 
-        val matches = usda.search(query)
-        if (matches.isEmpty()) {
-            return "Nothing saved matches \"$query\", and USDA has no match. Read the label from a photo, or look it up on the web."
+        // Confident matches are returned as matches. A close one is only a suggestion, and
+        // saying so is the difference between the agent asking and the agent logging
+        // something that merely looked right.
+        val found = repo.searchFoods(query)
+        val confident = found
+            .filter { it.strength != MatchStrength.CLOSE }
+            .mapNotNull { repo.food(it.target.id) }
+        if (confident.isNotEmpty()) {
+            return confident.joinToString("\n") { describeFood(it) }
         }
-        return "Nothing saved yet. USDA candidates:\n" +
-            matches.joinToString("\n") { describeUsda(it) } +
-            "\nSave the right one with save_food using its fdc_id."
+
+        val close = found.mapNotNull { repo.food(it.target.id) }
+        val librarySize = repo.foodCount()
+        val usdaMatches = usda.search(query)
+
+        return buildString {
+            appendLine(noSavedMatchLine(query, librarySize))
+            if (close.isNotEmpty()) {
+                appendLine()
+                appendLine("Closest saved foods — similar, not matches:")
+                close.forEach { appendLine(describeFood(it)) }
+            }
+            appendLine()
+            if (usdaMatches.isEmpty()) {
+                append("USDA has no match either. Read the label from a photo, or look it up on the web.")
+            } else {
+                appendLine("USDA candidates:")
+                usdaMatches.forEach { appendLine(describeUsda(it)) }
+                append("Save the right one with save_food using its fdc_id.")
+            }
+        }
     }
 
     /** Recipes by name, with the ids needed to log against one or to change it. */
@@ -345,12 +368,12 @@ class ToolExecutor(
         val ingredients = recipe.ingredients
             .map { ingredient ->
                 val name = repo.food(ingredient.foodId)?.name ?: "(missing food)"
-                "${ingredient.amount.toInt()} ${ingredient.unit} $name"
+                "${formatAmount(ingredient.amount)} ${ingredient.unit} $name"
             }
             .joinToString(", ")
         // The portions are the units this recipe can be logged in, the whole included.
-        val portions = recipe.portions.joinToString(", ") { "${it.name}=${it.grams.toInt()}g" }
-        return "- id=${recipe.id} name=\"${recipe.name}\" makes=${recipe.yieldGrams.toInt()} g " +
+        val portions = recipe.portions.joinToString(", ") { "${it.name}=${formatMeasure(it.grams)}g" }
+        return "- id=${recipe.id} name=\"${recipe.name}\" makes=${formatMeasure(recipe.yieldGrams)} g " +
             "portions=[$portions] ingredients=[$ingredients]"
     }
 
@@ -565,7 +588,7 @@ class ToolExecutor(
         food.brand?.let { append(" brand=\"$it\"") }
         append(" per100g={${describeNutrients(food.per100g, includeUnits = false)}}")
         if (food.servings.isNotEmpty()) {
-            append(" servings=[${food.servings.joinToString(", ") { "${it.name}=${it.grams}g" }}]")
+            append(" servings=[${food.servings.joinToString(", ") { "${it.name}=${formatMeasure(it.grams)}g" }}]")
         }
         append(" source=${food.source.name.lowercase()}")
         if (food.estimated.isNotEmpty()) {
@@ -578,19 +601,20 @@ class ToolExecutor(
         food.brand?.let { append(" brand=\"$it\"") }
         append(" per100g={${describeNutrients(food.per100g, includeUnits = false)}}")
         if (food.servings.isNotEmpty()) {
-            append(" servings=[${food.servings.joinToString(", ") { "${it.name}=${it.grams}g" }}]")
+            append(" servings=[${food.servings.joinToString(", ") { "${it.name}=${formatMeasure(it.grams)}g" }}]")
         }
     }
 
     private fun describeEntry(entry: LogEntryEntity): String = buildString {
-        append("${entry.amount} ${entry.unit} of \"${entry.label}\" (${entry.grams.toInt()} g)")
+        append("${formatAmount(entry.amount)} ${entry.unit} of \"${entry.label}\" (${formatMeasure(entry.grams)} g)")
         append(" id=${entry.id}")
-        entry.nutrients[Nutrient.KCAL]?.let { append(" ${it.toInt()} kcal") }
+        entry.nutrients[Nutrient.KCAL]?.let { append(" ${formatMeasure(it)} kcal") }
     }
 
     private fun describeNutrients(nutrients: Nutrients, includeUnits: Boolean = true): String =
         nutrients.amounts.entries.joinToString(", ") { (nutrient, value) ->
-            if (includeUnits) "${nutrient.name.lowercase()}=${value.toInt()}${nutrient.unit}" else "${nutrient.name.lowercase()}=${value.toInt()}"
+            if (includeUnits) "${nutrient.name.lowercase()}=${formatMeasure(value)}${nutrient.unit}"
+            else "${nutrient.name.lowercase()}=${formatMeasure(value)}"
         }
 }
 
@@ -699,3 +723,26 @@ internal fun JsonObject.ingredients(): List<Ingredient>? {
         Ingredient(foodId, amount, unit)
     }
 }
+
+/**
+ * What the model is told when nothing saved matched.
+ *
+ * Saying "nothing saved yet" on a plain search miss once led the agent to tell the user
+ * their library was empty when it held 27 foods. A miss is a miss; the size of the
+ * library is a separate fact, and the only one that can make "empty" true.
+ */
+internal fun noSavedMatchLine(query: String, librarySize: Int): String = when (librarySize) {
+    0 -> "No saved food matches \"$query\"; nothing is saved yet."
+    1 -> "No saved food matches \"$query\". The library has 1 food."
+    else -> "No saved food matches \"$query\". The library has $librarySize foods."
+}
+
+/** An amount in whatever unit: exact enough that 0.25 cup does not become 0. */
+internal fun formatAmount(value: Double): String = trimZeroes("%.2f".format(value))
+
+/** Grams and nutrient values: one decimal is as much as is meant. */
+internal fun formatMeasure(value: Double): String = trimZeroes("%.1f".format(value))
+
+/** "0.50" is "0.5", "80.00" is "80". */
+private fun trimZeroes(formatted: String): String =
+    if (!formatted.contains('.')) formatted else formatted.trimEnd('0').trimEnd('.')

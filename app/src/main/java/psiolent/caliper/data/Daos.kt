@@ -8,6 +8,9 @@ import androidx.room.Transaction
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
+/** A food reduced to what searching needs. */
+data class FoodName(val id: String, val name: String, val brand: String?)
+
 @Dao
 interface FoodDao {
     @Query("SELECT * FROM foods ORDER BY name")
@@ -19,18 +22,22 @@ interface FoodDao {
     @Query("SELECT * FROM foods WHERE id = :id")
     suspend fun byId(id: String): FoodEntity?
 
+    /**
+     * Just enough of each food to search it. Ranking happens in `domain/FoodSearch`, so
+     * there is no reason to decode every nutrient panel and serving list to compare names.
+     */
+    @Query("SELECT id, name, brand FROM foods")
+    suspend fun names(): List<FoodName>
+
+    @Query("SELECT COUNT(*) FROM foods")
+    suspend fun count(): Int
+
     /** Used to reuse a food the model is saving again rather than pile up duplicates. */
     @Query(
         "SELECT * FROM foods WHERE name = :name COLLATE NOCASE " +
             "AND IFNULL(brand, '') = IFNULL(:brand, '') LIMIT 1",
     )
     suspend fun byNameAndBrand(name: String, brand: String?): FoodEntity?
-
-    @Query(
-        "SELECT * FROM foods WHERE name LIKE '%' || :query || '%' " +
-            "OR (brand IS NOT NULL AND brand LIKE '%' || :query || '%') ORDER BY name LIMIT 25",
-    )
-    suspend fun search(query: String): List<FoodEntity>
 
     @Upsert
     suspend fun upsert(food: FoodEntity)

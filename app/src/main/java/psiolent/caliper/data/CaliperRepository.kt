@@ -2,9 +2,12 @@ package psiolent.caliper.data
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import psiolent.caliper.domain.FoodMatch
 import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
+import psiolent.caliper.domain.SearchTarget
 import psiolent.caliper.domain.Serving
+import psiolent.caliper.domain.rankFoods
 import psiolent.caliper.domain.resolveGrams
 import java.time.Instant
 import java.time.LocalDate
@@ -45,7 +48,15 @@ class CaliperRepository(private val db: CaliperDatabase) {
         return DayView(date, groups, groups.flatMap { it.entries }.sumOfNutrients())
     }
 
-    suspend fun searchFoods(query: String): List<FoodEntity> = foods.search(query)
+    suspend fun searchFoods(query: String, limit: Int = 5): List<FoodMatch> =
+        rankFoods(
+            query = query,
+            targets = foods.names().map { SearchTarget(it.id, it.name, it.brand) },
+            limit = limit,
+        )
+
+    /** How many foods are saved, for telling "no match" apart from "nothing saved". */
+    suspend fun foodCount(): Int = foods.count()
     suspend fun food(id: String): FoodEntity? = foods.byId(id)
     suspend fun foodByNameAndBrand(name: String, brand: String?): FoodEntity? = foods.byNameAndBrand(name, brand)
     suspend fun entry(id: String): LogEntryEntity? = logs.byId(id)

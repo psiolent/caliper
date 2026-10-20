@@ -37,6 +37,8 @@ import psiolent.caliper.data.RecipeEntity
 import psiolent.caliper.data.portions
 import psiolent.caliper.domain.Nutrient
 import psiolent.caliper.domain.Nutrients
+import psiolent.caliper.domain.SearchTarget
+import psiolent.caliper.domain.rankFoods
 import psiolent.caliper.domain.resolveGrams
 
 /** A delete that is about to happen, and what it will break if it does. */
@@ -89,7 +91,15 @@ fun LibraryScreen(container: AppContainer) {
     }
 
     val shownRecipes = recipes.filter { it.name.matches(query) }
-    val shownFoods = foods.filter { it.name.matches(query) || it.brand.orEmpty().matches(query) }
+    // The same ranking the agent uses, so a search here forgives the same things: word
+    // order, an extra word, one wrong letter.
+    val shownFoods = if (query.isBlank()) {
+        foods
+    } else {
+        val byId = foods.associateBy { it.id }
+        rankFoods(query, foods.map { SearchTarget(it.id, it.name, it.brand) })
+            .mapNotNull { byId[it.target.id] }
+    }
     val nothing = shownRecipes.isEmpty() && shownFoods.isEmpty()
 
     Column(Modifier.fillMaxSize()) {
