@@ -100,10 +100,19 @@ class AgentRunner(
             // refused tool. Counting steps rather than calls matters: the model sends
             // several calls at once, so ten refused calls can be two round trips.
             val refusals = RefusalStreak(MAX_REFUSAL_STEPS)
+            var promptTokens = 0
+            var cachedTokens = 0
+            var cacheWriteTokens = 0
+            var completionTokens = 0
             while (replyText == null && steps < MAX_STEPS) {
                 steps++
-                val response = client.chat(model, messages, tools, webSearch = true)
-                cost += response.usage?.cost ?: 0.0
+                val response = client.chat(model, messages, tools, webSearch = true, sessionId = sessionId)
+                val usage = response.usage
+                cost += usage?.cost ?: 0.0
+                promptTokens += usage?.promptTokens ?: 0
+                completionTokens += usage?.completionTokens ?: 0
+                cachedTokens += usage?.promptTokensDetails?.cachedTokens ?: 0
+                cacheWriteTokens += usage?.promptTokensDetails?.cacheWriteTokens ?: 0
 
                 val message = response.choices.firstOrNull()?.message
                 if (message == null) {
@@ -139,6 +148,11 @@ class AgentRunner(
                     break
                 }
             }
+
+            agentLog.append(
+                "── usage: $promptTokens in, $cachedTokens cached, $cacheWriteTokens written, " +
+                    "$completionTokens out",
+            )
 
             reply(
                 sessionId,

@@ -40,6 +40,14 @@ data class Usage(
     @SerialName("prompt_tokens") val promptTokens: Int = 0,
     @SerialName("completion_tokens") val completionTokens: Int = 0,
     val cost: Double? = null,
+    @SerialName("prompt_tokens_details") val promptTokensDetails: PromptTokensDetails? = null,
+)
+
+/** How much of a prompt a provider served from its cache instead of reading it anew. */
+@Serializable
+data class PromptTokensDetails(
+    @SerialName("cached_tokens") val cachedTokens: Int = 0,
+    @SerialName("cache_write_tokens") val cacheWriteTokens: Int = 0,
 )
 
 @Serializable
@@ -73,6 +81,7 @@ class OpenRouterClient(private val apiKey: String) {
         messages: List<JsonObject>,
         tools: List<JsonObject>,
         webSearch: Boolean,
+        sessionId: String,
     ): ChatResponse {
         val body = buildJsonObject {
             put("model", model)
@@ -81,6 +90,11 @@ class OpenRouterClient(private val apiKey: String) {
                 put("tools", JsonArray(tools + if (webSearch) listOf(webSearchTool()) else emptyList()))
             }
             put("stream", false)
+            // The conversation key. Without it OpenRouter treats each request as unrelated,
+            // routes it to whichever provider is next, and both the provider's prompt cache
+            // and OpenRouter's sticky routing — which keeps a session on one provider — go
+            // unused. The value also groups the session's requests in OpenRouter's logs.
+            put("session_id", sessionId)
         }
         val response = Http.postJson(
             url = "$BASE_URL/chat/completions",

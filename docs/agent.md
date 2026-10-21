@@ -100,6 +100,12 @@ app update.
 
 - The application database is the cache: a food's nutrition is looked up once.
 - Context per turn is a briefing plus one session, never a growing history.
+- The request is stable at the front so a provider's prompt cache can be reused
+  (`docs/decisions/0013`), and every request carries the session id as OpenRouter's
+  `session_id`, which both pins the conversation to one provider and keys the model
+  host's cache. Measured on the device, the GLM 5.3 routes reuse only a few hundred of
+  the ~3,700 tokens a turn sends, so the promise is largely unmet there. The log line
+  `── usage:` reports the tokens, cached and written, that each turn actually cost.
 - Photos are downscaled to a JPEG capped at 1024 px before sending.
 - The web search tool is model-controlled, not run on every request.
 - Per-turn cost reported by the API is accumulated and shown in Settings. Total spend
