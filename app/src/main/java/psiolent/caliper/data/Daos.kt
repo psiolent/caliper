@@ -161,5 +161,5 @@ interface MessageDao {
     suspend fun upsert(message: MessageEntity)
 
     @Insert
-    suspend fun insert(message: MessageEntity)
+    suspend fun insert(message: MessageEntity): Long
 }

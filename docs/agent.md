@@ -7,11 +7,19 @@ nutrient. That split is the whole design of this layer.
 
 Each turn sends, in order:
 
-1. A system message with the static instructions (`Prompt.SYSTEM`).
-2. A second system message with the briefing: today's date, the profile, today's
-   totals (`AgentRunner.context`).
-3. The current session's earlier messages.
-4. The new user turn, with one image part per attached photo.
+1. One system message: the static instructions (`Prompt.SYSTEM`) followed by the profile.
+2. The current session's earlier messages, each replayed exactly as it was sent — a turn
+   that carried photos is replayed with its photos.
+3. The new user turn: the briefing (today's date, today's totals) followed by the user's
+   own words, with one image part per attached photo.
+
+Stable first, volatile last, so a provider's prompt cache can be reused: everything ahead
+of the newest turn is unchanged since the last request, and the briefing, which changes
+with every logged bite, rides at the tail where changing it costs only that turn
+(`docs/decisions/0013`). `AgentRunner.requestMessages` builds this and is unit-tested.
+
+The full-size photos of the open session are held in memory by `AgentRunner` and dropped
+when the session ends; the database keeps only the thumbnails that History shows.
 
 Nothing older than the current session is included. The loop is bounded by
 `AgentRunner.MAX_STEPS` (100), generous because the model is cheap and a photo can

@@ -14,6 +14,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Runs one session turn: assemble a small context, call the model, execute any
@@ -27,7 +28,19 @@ class AgentRunner(
 ) {
     private val tools = ToolSchema.all()
 
+    /**
+     * The photos sent so far in the session that is open, by stored message id.
+     *
+     * Kept only while the session is the active one: a new session archives the old, and
+     * the database keeps just the thumbnails for History. Replaying a turn's own photos is
+     * what keeps the request prefix identical from turn to turn, which is what a provider's
+     * prompt cache can reuse — dropping them would change the prefix and cost a full miss.
+     */
+    private val sessionPhotos = ConcurrentHashMap<String, ConcurrentHashMap<Long, List<String>>>()
+
     suspend fun newSession(): String {
+        // The previous session is now archived; its full images are not kept.
+        sessionPhotos.clear()
         val id = UUID.randomUUID().toString()
         repo.saveSession(SessionEntity(id = id, startedAt = Instant.now().toEpochMilli()))
         return id
@@ -45,7 +58,8 @@ class AgentRunner(
         }
 
         val imageDataUrls = photos.map { it.dataUrl }
-        repo.addMessage(
+        val photosThisSession = sessionPhotos.getOrPut(sessionId) { ConcurrentHashMap() }
+        val messageId = repo.addMessage(
             MessageEntity(
                 sessionId = sessionId,
                 role = MessageRole.USER,
@@ -55,6 +69,7 @@ class AgentRunner(
                 at = Instant.now().toEpochMilli(),
             ),
         )
+        if (imageDataUrls.isNotEmpty()) photosThisSession[messageId] = imageDataUrls
 
         val executor = ToolExecutor(repo, UsdaClient(settings.usdaApiKey), agentLog)
         agentLog.append("── user: ${userText.ifBlank { "(no text)" }} (${photos.size} photo(s))")
@@ -63,16 +78,20 @@ class AgentRunner(
             val model = settings.modelFor(imageDataUrls.isNotEmpty())
             val client = OpenRouterClient(apiKey)
             val messages = mutableListOf<JsonObject>()
-            messages += textMessage("system", Prompt.SYSTEM)
-            messages += textMessage("system", context())
-            repo.messages(sessionId).dropLast(1).forEach { previous ->
-                messages += textMessage(previous.role.name.lowercase(), previous.content)
-            }
-            messages += if (imageDataUrls.isNotEmpty()) {
-                userMessageWithImages(userText, imageDataUrls)
-            } else {
-                textMessage("user", userText)
-            }
+
+            val earlier = repo.messages(sessionId).dropLast(1)
+            agentLog.append(
+                "── context: ${earlier.size} earlier messages, " +
+                    "${earlier.sumOf { photosThisSession[it.id]?.size ?: 0 }} photo(s) replayed",
+            )
+
+            messages += requestMessages(
+                system = Prompt.SYSTEM + "\n\n" + profileSection(),
+                earlier = earlier,
+                photosOf = { photosThisSession[it].orEmpty() },
+                userContent = briefing().let { if (it.isBlank()) userText else "$it\n\n$userText" },
+                userPhotos = imageDataUrls,
+            )
 
             onProgress("Thinking\u2026")
             var replyText: String? = null
@@ -149,22 +168,25 @@ class AgentRunner(
         return text
     }
 
-    /** Profile plus a compact briefing: enough state to act, never the whole history. */
-    private suspend fun context(): String {
-        val profile = repo.profileText().ifBlank { "(nothing recorded yet)" }
+    /**
+     * The profile, in the leading system message. It changes only when the agent rewrites
+     * it, so it can sit at the front of the request without breaking the cached prefix.
+     */
+    private suspend fun profileSection(): String =
+        "User profile:\n" + repo.profileText().ifBlank { "(nothing recorded yet)" }
+
+    /**
+     * The date and today's totals. Volatile by nature — logging anything changes it — so it
+     * rides at the tail of the request, where a change costs only the newest turn instead of
+     * invalidating everything behind it.
+     */
+    private suspend fun briefing(): String {
         val today = LocalDate.now(ZoneId.systemDefault())
         val day = repo.day(today)
         val totals = day.totals.amounts.entries
             .joinToString(", ") { "${it.key.name.lowercase()}=${formatMeasure(it.value)}${it.key.unit}" }
             .ifBlank { "nothing logged" }
-        return buildString {
-            appendLine("Today is $today.")
-            appendLine()
-            appendLine("User profile:")
-            appendLine(profile)
-            appendLine()
-            appendLine("Today so far: $totals")
-        }
+        return "Today is $today.\nToday so far: $totals"
     }
 
     /** What to say when the same tool has been refused too many steps running. */
@@ -193,3 +215,42 @@ class AgentRunner(
         const val MAX_REFUSAL_STEPS = 10
     }
 }
+
+/**
+ * The request body for one turn, in the order that keeps the provider's prompt cache
+ * useful: the stable part first, the volatile part last.
+ *
+ * The prompt and the profile change only when the agent rewrites the profile, and the
+ * transcript only grows. Anything that changes every turn — today's date, today's totals
+ * — rides at the tail, where it costs at most the newest turn instead of invalidating
+ * everything behind it.
+ */
+internal fun requestMessages(
+    system: String,
+    earlier: List<MessageEntity>,
+    photosOf: (Long) -> List<String>,
+    userContent: String,
+    userPhotos: List<String>,
+): List<JsonObject> = buildList {
+    add(textMessage("system", system))
+    earlier.forEach { add(replayMessage(it, photosOf(it.id))) }
+    add(
+        if (userPhotos.isEmpty()) {
+            textMessage("user", userContent)
+        } else {
+            userMessageWithImages(userContent, userPhotos)
+        },
+    )
+}
+
+/**
+ * One earlier turn, rebuilt exactly as it was sent: text, or text plus the photos that
+ * went with it. Identical bytes are the point — a turn replayed differently would change
+ * the prefix and cost a cache miss for everything after it.
+ */
+internal fun replayMessage(previous: MessageEntity, imageDataUrls: List<String>): JsonObject =
+    if (previous.role == MessageRole.USER && imageDataUrls.isNotEmpty()) {
+        userMessageWithImages(previous.content, imageDataUrls)
+    } else {
+        textMessage(previous.role.name.lowercase(), previous.content)
+    }

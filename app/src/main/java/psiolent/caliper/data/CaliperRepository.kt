@@ -241,7 +241,7 @@ class CaliperRepository(private val db: CaliperDatabase) {
     suspend fun saveSession(session: SessionEntity) = sessions.upsert(session)
     fun observeMessages(sessionId: String): Flow<List<MessageEntity>> = messages.observeBySession(sessionId)
     suspend fun messages(sessionId: String): List<MessageEntity> = messages.bySession(sessionId)
-    suspend fun addMessage(message: MessageEntity) = messages.insert(message)
+    suspend fun addMessage(message: MessageEntity): Long = messages.insert(message)
 
     // --- Backup ------------------------------------------------------------
 
