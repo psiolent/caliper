@@ -49,3 +49,9 @@ with the screen off failed once with "Unable to resolve host openrouter.ai".
   the agent's memory (`docs/decisions/0002`).
 - **Our own voice input** — removed in favour of the keyboard's dictation, which is
   the OS recogniser and needs no permission from us.
+- **Chasing prompt-cache savings** — measured on the device: the GLM 5.3 routes credit a
+  few hundred of the ~3,700 tokens each turn sends, sometimes none, and a perfect cache
+  would save about a tenth of a cent per turn. The request is stable and `session_id`
+  pins the provider (`docs/decisions/0013`, `docs/agent.md`); trimming the tool
+  definitions is the only reliable saving and it costs the guidance that keeps tool calls
+  well-formed. Decided to leave it, not to engineer around it.
